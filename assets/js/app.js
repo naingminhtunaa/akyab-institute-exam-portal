@@ -887,6 +887,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     submittedAt: submissionRecord.submittedAt
                 });
                 await batch.commit();
+                globalSubmissionsMap[submissionId] = { ...submissionRecord, _docId: submissionId };
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
                 window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Total Score: ${autoScore} / 100 (Essay grading pending: ${examTotals.essay} marks).`);
@@ -1028,7 +1029,38 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         window.viewStudentSubmittedRecord = async function() {
             if (!currentStudentProfile) return;
-            const sub = Object.values(globalSubmissionsMap).find(s => s.studentId === currentStudentProfile.studentId);
+            let sub = Object.values(globalSubmissionsMap).find(s => s.studentId === currentStudentProfile.studentId);
+
+            if (!sub) {
+                try {
+                    const statusRef = doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', currentStudentProfile.studentId);
+                    const statusDoc = await getDoc(statusRef);
+                    if (statusDoc.exists() && statusDoc.data().submissionId) {
+                        const submissionId = statusDoc.data().submissionId;
+                        const submissionDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', submissionId));
+                        if (submissionDoc.exists()) {
+                            const data = submissionDoc.data();
+                            sub = {
+                                ...data,
+                                _docId: submissionDoc.id,
+                                submissionId: data.submissionId || submissionDoc.id,
+                                answers: data.answers || {},
+                                autoScore: data.autoScore ?? 0,
+                                essayScore: data.essayScore ?? 0,
+                                totalObjectivePossible: data.totalObjectivePossible ?? 0,
+                                totalExamPossible: data.totalExamPossible ?? 100
+                            };
+                            globalSubmissionsMap[submissionDoc.id] = sub;
+                        }
+                    }
+                } catch (err) {
+                    console.error("Student record read error:", err);
+                    window.showModal("Record Access Error", err.code === 'permission-denied'
+                        ? "This submission belongs to a different browser authentication session. Please contact the administrator."
+                        : "Could not load the submitted record. Please check your connection and retry.");
+                    return;
+                }
+            }
             if (!sub) {
                 window.showModal("Record Not Found", "No submitted record found for this candidate.");
                 return;

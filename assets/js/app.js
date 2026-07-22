@@ -59,6 +59,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             }
         });
 
+        document.addEventListener('input', event => {
+            if (!examInProgress || !event.target.closest('#form-candidate-answers')) return;
+            const state = JSON.parse(localStorage.getItem('akyabExamState') || 'null');
+            if (!state) return;
+            state.answers = Object.fromEntries(new FormData(document.getElementById('form-candidate-answers')).entries());
+            localStorage.setItem('akyabExamState', JSON.stringify(state));
+        });
+
         window.currentExamData = {
             title: "Akyab Institute Batch-9 Official Entrance Examination",
             timeLimitMinutes: 180,
@@ -440,6 +448,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const startGate = document.getElementById('exam-start-gate');
             const submittedBanner = document.getElementById('already-submitted-banner');
             const startBtn = document.getElementById('btn-start-exam');
+            document.getElementById('exam-paper-container').classList.add('hidden');
+            startGate.classList.remove('hidden');
 
             let existing;
             try {
@@ -462,22 +472,57 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 startBtn.innerHTML = `<i class="fa-solid fa-play"></i> <span>Start Examination Now & Begin Timer</span>`;
                 startBtn.className = "px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-500/30 text-sm transition-all transform active:scale-95 shrink-0 flex items-center gap-2";
                 submittedBanner.classList.add('hidden');
+                try {
+                    const state = JSON.parse(localStorage.getItem('akyabExamState') || 'null');
+                    if (state?.studentId === sid) window.startCandidateExam(true);
+                } catch {
+                    localStorage.removeItem('akyabExamState');
+                }
             }
         }
 
-        window.startCandidateExam = function() {
+        window.startCandidateExam = function(resume = false) {
             examInProgress = true;
+            let state;
+            try {
+                state = JSON.parse(localStorage.getItem('akyabExamState') || 'null');
+            } catch {
+                localStorage.removeItem('akyabExamState');
+            }
+            if (!resume || !state || state.studentId !== currentStudentProfile.studentId) {
+                const durationMs = (window.currentExamData.timeLimitMinutes || 180) * 60 * 1000;
+                state = {
+                    studentId: currentStudentProfile.studentId,
+                    startedAt: Date.now(),
+                    endsAt: Date.now() + durationMs,
+                    answers: {}
+                };
+                localStorage.setItem('akyabExamState', JSON.stringify(state));
+            }
             document.getElementById('exam-start-gate').classList.add('hidden');
             document.getElementById('exam-paper-container').classList.remove('hidden');
 
             renderCandidateExamPaper();
 
-            let durationSeconds = (window.currentExamData.timeLimitMinutes || 180) * 60;
+            for (const [name, value] of Object.entries(state.answers || {})) {
+                document.querySelectorAll(`[name="${CSS.escape(name)}"]`).forEach(field => {
+                    if (field.type === 'radio') field.checked = field.value === value;
+                    else field.value = value;
+                });
+            }
+
+            let durationSeconds = Math.max(0, Math.ceil((state.endsAt - Date.now()) / 1000));
             const timerDisplay = document.getElementById('timer-display');
             const timerSub = document.getElementById('timer-status-sub');
             timerSub.textContent = "Exam in progress...";
 
             if (examTimerInterval) clearInterval(examTimerInterval);
+
+            if (durationSeconds <= 0) {
+                timerDisplay.textContent = "00:00:00";
+                setTimeout(() => window.submitCandidateAnswersAuto(), 0);
+                return;
+            }
 
             examTimerInterval = setInterval(() => {
                 durationSeconds--;
@@ -726,7 +771,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         window.submitCandidateAnswersAuto = async function() {
             if (!currentStudentProfile) return;
 
-            examInProgress = false;
             window.stopAllAudioInstances();
             if (examTimerInterval) clearInterval(examTimerInterval);
 
@@ -804,6 +848,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     submittedAt: submissionRecord.submittedAt
                 });
                 await batch.commit();
+                examInProgress = false;
+                localStorage.removeItem('akyabExamState');
                 window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
@@ -812,6 +858,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             } catch (err) {
                 console.error("Submission save error:", err);
                 window.showModal("Submission Error", "Failed to save submission to cloud database. Please retry.");
+                window.startCandidateExam(true);
             }
         };
 
@@ -1576,5 +1623,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         window.closeModal = function() {
             document.getElementById('modal-backdrop').classList.add('hidden');
         };
+
 
 

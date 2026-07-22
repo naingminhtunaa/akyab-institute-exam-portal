@@ -157,6 +157,35 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         }
         window.getCleanWordCount = getCleanWordCount;
 
+        function getExamPointTotals() {
+            let objective = 0;
+            let essay = 0;
+            for (const section of window.currentExamData?.sections || []) {
+                for (const part of section.parts || []) {
+                    for (const item of part.items || []) {
+                        const points = Number(item.points) || 0;
+                        if (item.type === 'essay') essay += points;
+                        else objective += points;
+                    }
+                }
+            }
+            return { objective, essay, total: objective + essay };
+        }
+
+        function refreshExamPoints() {
+            const badge = document.getElementById('builder-total-points');
+            if (!badge) return;
+            const totals = getExamPointTotals();
+            badge.textContent = `Total: ${totals.total} / 100 (Objective ${totals.objective} + Essay ${totals.essay})`;
+            badge.className = totals.total === 100
+                ? 'px-3 py-2 bg-emerald-50 text-emerald-700 text-xs font-extrabold rounded-xl border border-emerald-200'
+                : 'px-3 py-2 bg-rose-50 text-rose-700 text-xs font-extrabold rounded-xl border border-rose-200';
+        }
+
+        document.addEventListener('change', event => {
+            if (event.target.closest('#builder-sections-container')) refreshExamPoints();
+        });
+
         function escapeHtml(value) {
             return String(value ?? '')
                 .replaceAll('&', '&amp;')
@@ -235,7 +264,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         submittedAt: data.submittedAt || data.submissionTime || data.timestamp || data.createdAt || null,
                         answers: data.answers || data.responses || data.studentAnswers || {},
                         autoScore: data.autoScore ?? data.objectiveScore ?? data.score ?? 0,
-                        totalObjectivePossible: data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0
+                        totalObjectivePossible: data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0,
+                        totalExamPossible: data.totalExamPossible ?? 100,
+                        totalEssayPossible: data.totalEssayPossible ?? Math.max(0, 100 - (data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0))
                     };
                 });
                 renderSubmissionsTable();
@@ -808,11 +839,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                         totalObjectivePossible += pts;
                                         if (answersMap[qName] === item.correctAnswer) autoScore += pts;
                                     } else if (item.subItems && item.correctSubAnswers) {
+                                        totalObjectivePossible += pts;
+                                        const pointsPerStatement = pts / item.subItems.length;
                                         item.subItems.forEach((_, subIdx) => {
                                             const subName = `${qName}_sub_${subIdx}`;
-                                            totalObjectivePossible += 1;
                                             if (answersMap[subName] === item.correctSubAnswers[subIdx]) {
-                                                autoScore += 1;
+                                                autoScore += pointsPerStatement;
                                             }
                                         });
                                     }
@@ -824,6 +856,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             });
 
             const submissionId = `${currentStudentProfile.studentId}_${Date.now()}`;
+            const examTotals = getExamPointTotals();
             const submissionRecord = {
                 submissionId: submissionId,
                 ownerUid: auth.currentUser.uid,
@@ -833,6 +866,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 answers: answersMap,
                 autoScore: autoScore,
                 totalObjectivePossible: totalObjectivePossible,
+                totalEssayPossible: examTotals.essay,
+                totalExamPossible: examTotals.total,
                 essayGraded: false,
                 essayScore: 0,
                 adminRemarks: ""
@@ -850,7 +885,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 await batch.commit();
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
-                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}`);
+                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}. Essay Pending: ${examTotals.essay} marks. Total Exam Marks: ${examTotals.total} / 100.`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
                 document.getElementById('exam-start-gate').classList.add('hidden');
@@ -1139,6 +1174,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
             const container = document.getElementById('builder-sections-container');
             if (!window.currentExamData.sections) window.currentExamData.sections = [];
+            refreshExamPoints();
 
             container.innerHTML = window.currentExamData.sections.map((sec, sIdx) => {
                 let partsBuilderHTML = '';
@@ -1362,6 +1398,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         window.saveExamPaper = async function() {
             window.updateExamMeta();
+            const totals = getExamPointTotals();
+            if (totals.total !== 100) {
+                window.showModal("Invalid Total Points", `Exam points must equal exactly 100. Current total: ${totals.total} (Objective ${totals.objective} + Essay ${totals.essay}).`);
+                return;
+            }
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_papers', 'current_exam'), window.currentExamData);
                 window.showModal("Exam Saved", "Exam paper configuration successfully saved to Firestore cloud storage.");
@@ -1427,7 +1468,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     <td class="p-3 font-bold font-mono text-slate-900">${sub.studentId}</td>
                     <td class="p-3 font-semibold text-slate-800">${sub.studentName}</td>
                     <td class="p-3 text-slate-500">${sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Date unavailable'}</td>
-                    <td class="p-3 font-extrabold text-emerald-600">${sub.autoScore} / ${sub.totalObjectivePossible}</td>
+                    <td class="p-3 font-extrabold text-emerald-600">${sub.autoScore} / ${sub.totalObjectivePossible} <span class="block text-[10px] text-slate-500">Total Exam: ${sub.totalExamPossible || 100}</span></td>
                     <td class="p-3 text-right space-x-2">
                         <button onclick="viewCandidateSubmissionDetails('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs">Inspect</button>
                         <button onclick="gradeEssayModal('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold rounded-lg text-xs">Grade Essay</button>

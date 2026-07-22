@@ -28,8 +28,8 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.keys().hasOnly([
           'submissionId', 'ownerUid', 'studentId', 'studentName', 'submittedAt',
-          'answers', 'autoScore', 'totalObjectivePossible', 'essayGraded',
-          'essayScore', 'adminRemarks'
+          'answers', 'autoScore', 'totalObjectivePossible', 'totalEssayPossible',
+          'totalExamPossible', 'essayGraded', 'essayScore', 'adminRemarks'
         ])
         && request.resource.data.studentId is string
         && request.resource.data.studentName is string
@@ -37,6 +37,9 @@ service cloud.firestore {
         && request.resource.data.submittedAt is string
         && request.resource.data.autoScore is number
         && request.resource.data.totalObjectivePossible is number
+        && request.resource.data.totalEssayPossible is number
+        && request.resource.data.totalExamPossible == 100
+        && request.resource.data.totalObjectivePossible + request.resource.data.totalEssayPossible == 100
         && request.resource.data.autoScore >= 0
         && request.resource.data.autoScore <= request.resource.data.totalObjectivePossible
         && request.resource.data.essayGraded == false

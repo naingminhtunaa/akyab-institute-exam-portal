@@ -1,0 +1,23 @@
+body { font-family: 'Inter', sans-serif; }
+        
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #print-section, #print-section * {
+                visibility: visible;
+            }
+            #print-section {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white;
+                color: black;
+                padding: 20px;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+

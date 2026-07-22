@@ -1,0 +1,63 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'projecty008@gmail.com';
+    }
+
+    match /artifacts/akyab-institute-batch-9-shared/public/data/exam_papers/{paperId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /artifacts/akyab-institute-batch-9-shared/public/data/student_roster/{studentId} {
+      // Students can verify one exact ID, but cannot enumerate the roster.
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /artifacts/akyab-institute-batch-9-shared/public/data/exam_submissions/{submissionId} {
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'submissionId', 'ownerUid', 'studentId', 'studentName', 'submittedAt',
+          'answers', 'autoScore', 'totalObjectivePossible', 'essayGraded',
+          'essayScore', 'adminRemarks'
+        ])
+        && request.resource.data.studentId is string
+        && request.resource.data.studentName is string
+        && request.resource.data.answers is map
+        && request.resource.data.submittedAt is string
+        && request.resource.data.autoScore is number
+        && request.resource.data.totalObjectivePossible is number
+        && request.resource.data.autoScore >= 0
+        && request.resource.data.autoScore <= request.resource.data.totalObjectivePossible
+        && request.resource.data.essayGraded == false
+        && request.resource.data.essayScore == 0
+        && request.resource.data.adminRemarks == ''
+        && request.resource.data.studentId.size() <= 40
+        && request.resource.data.studentName.size() <= 150;
+
+      allow get, list: if isAdmin()
+        || (signedIn() && resource.data.ownerUid == request.auth.uid);
+
+      allow update, delete: if isAdmin();
+    }
+
+    // Legacy plaintext credential documents are intentionally inaccessible.
+    match /artifacts/akyab-institute-batch-9-shared/public/data/admin_config/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

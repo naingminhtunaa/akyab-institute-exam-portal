@@ -92,6 +92,10 @@
                         <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Full Candidate Name</label>
                         <input type="text" id="input-student-name" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm">
                     </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Student Password</label>
+                        <input type="password" id="input-student-password" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="current-password" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm tracking-widest">
+                    </div>
                     <button id="btn-student-login-submit" type="submit" class="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 text-sm transition-all flex items-center justify-center gap-2">
                         <span>Access Student Gate</span> <i class="fa-solid fa-arrow-right"></i>
                     </button>
@@ -207,9 +211,11 @@
                     <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
                         <i class="fa-solid fa-user-plus text-brand-600"></i> Add New Approved Candidate
                     </h3>
-                    <form onsubmit="handleAddRosterStudent(event)" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <form onsubmit="handleAddRosterStudent(event)" class="grid grid-cols-1 sm:grid-cols-5 gap-3">
                         <input type="text" id="roster-input-id" required placeholder="Student ID (e.g. AK9-005)" class="px-3.5 py-2 border rounded-xl text-xs font-semibold uppercase">
                         <input type="text" id="roster-input-name" required placeholder="Candidate Full Name" class="px-3.5 py-2 border rounded-xl text-xs">
+                        <input type="text" id="roster-input-password" required readonly inputmode="numeric" class="px-3.5 py-2 border rounded-xl text-xs font-mono font-bold tracking-widest bg-slate-50">
+                        <button type="button" onclick="generateStudentPassword()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2 rounded-xl border">Generate Password</button>
                         <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs py-2 rounded-xl transition-all shadow-md shadow-brand-500/20">
                             + Authorize Candidate
                         </button>
@@ -227,6 +233,7 @@
                                 <tr class="bg-slate-100/70 border-b text-slate-600 font-bold uppercase tracking-wider">
                                     <th class="p-3">Student ID</th>
                                     <th class="p-3">Candidate Full Name</th>
+                                    <th class="p-3">Password</th>
                                     <th class="p-3">Status</th>
                                     <th class="p-3 text-right">Actions</th>
                                 </tr>

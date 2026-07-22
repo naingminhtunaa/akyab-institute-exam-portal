@@ -17,7 +17,12 @@ service cloud.firestore {
     }
 
     match /artifacts/akyab-institute-batch-9-shared/public/data/student_roster/{studentId} {
-      // Students can verify one exact ID, but cannot enumerate the roster.
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /artifacts/akyab-institute-batch-9-shared/public/data/student_login_auth/{studentId} {
+      // Exact-ID lookup only; plaintext passwords remain in the admin-only roster.
       allow get: if signedIn();
       allow list: if isAdmin();
       allow create, update, delete: if isAdmin();

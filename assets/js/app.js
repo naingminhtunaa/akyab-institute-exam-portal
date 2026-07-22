@@ -199,6 +199,29 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 .replaceAll("'", '&#039;');
         }
 
+        function createNumericPassword() {
+            const random = new Uint32Array(1);
+            crypto.getRandomValues(random);
+            return String(random[0] % 100000000).padStart(8, '0');
+        }
+
+        function createPasswordSalt() {
+            const bytes = new Uint8Array(16);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function hashStudentPassword(password, salt) {
+            const data = new TextEncoder().encode(`${salt}:${password}`);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        window.generateStudentPassword = function() {
+            const input = document.getElementById('roster-input-password');
+            if (input) input.value = createNumericPassword();
+        };
+
         async function initAuth() {
             try {
                 await auth.authStateReady();
@@ -246,6 +269,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 globalRosterMap = {};
                 snapshot.forEach(item => globalRosterMap[item.id] = item.data());
                 renderRosterTable();
+                if (!document.getElementById('roster-input-password')?.value) window.generateStudentPassword();
             } catch (err) {
                 console.error("Roster load error:", err);
             }
@@ -347,9 +371,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
             if (savedSession.role === 'student' && savedSession.studentId) {
                 try {
-                    const rosterDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', savedSession.studentId));
-                    if (!rosterDoc.exists()) throw new Error('Student is no longer registered.');
-                    const registeredName = String(rosterDoc.data().studentName || '').trim();
+                    const loginDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', savedSession.studentId));
+                    if (!loginDoc.exists()) throw new Error('Student is no longer registered.');
+                    const registeredName = String(loginDoc.data().studentName || '').trim();
                     currentUserRole = 'student';
                     currentStudentProfile = { studentId: savedSession.studentId, studentName: registeredName };
                     document.getElementById('user-display-name').textContent = `${registeredName} (${savedSession.studentId})`;
@@ -371,9 +395,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             e.preventDefault();
             const sid = document.getElementById('input-student-id').value.trim().toUpperCase();
             const sname = document.getElementById('input-student-name').value.trim();
+            const password = document.getElementById('input-student-password').value.trim();
             const loginBtn = document.getElementById('btn-student-login-submit');
 
-            if (!sid || !sname) return;
+            if (!sid || !sname || !/^\d{8}$/.test(password)) return;
 
             loginBtn.disabled = true;
             loginBtn.classList.add('opacity-60', 'cursor-wait');
@@ -382,18 +407,24 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             try {
                 if (!auth.currentUser) await initAuth();
 
-                const rosterDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid));
-                if (!rosterDoc.exists()) {
+                const loginDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', sid));
+                if (!loginDoc.exists()) {
                     window.showModal("Login Denied", `Student ID ${sid} is not registered in the approved candidate database.`);
                     return;
                 }
 
-                const rosterStudent = rosterDoc.data();
-                const registeredName = String(rosterStudent.studentName || '').trim();
+                const loginData = loginDoc.data();
+                const registeredName = String(loginData.studentName || '').trim();
                 const normalizeName = value => value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 
                 if (!registeredName || normalizeName(sname) !== normalizeName(registeredName)) {
                     window.showModal("Login Denied", "The candidate name does not match the name registered for this Student ID.");
+                    return;
+                }
+
+                const suppliedHash = await hashStudentPassword(password, loginData.passwordSalt || '');
+                if (!loginData.passwordHash || suppliedHash !== loginData.passwordHash) {
+                    window.showModal("Login Denied", "Invalid Student ID, candidate name, or password.");
                     return;
                 }
 
@@ -1132,7 +1163,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             badge.textContent = `${keys.length} Candidates`;
 
             if (keys.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400">No authorized candidates found. Add candidates above or seed demo data.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">No authorized candidates found.</td></tr>`;
                 return;
             }
 
@@ -1142,8 +1173,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     <tr class="hover:bg-slate-50/80 transition-all">
                         <td class="p-3 font-bold font-mono text-slate-900">${c.studentId}</td>
                         <td class="p-3 font-semibold text-slate-800">${c.studentName}</td>
+                        <td class="p-3 font-bold font-mono tracking-wider text-indigo-700">${c.studentPassword || 'Not set'}</td>
                         <td class="p-3"><span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold text-[10px]">Authorized</span></td>
                         <td class="p-3 text-right">
+                            <button onclick="editRosterStudent('${c.studentId}')" class="text-indigo-600 hover:text-indigo-800 p-1 mr-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
                             <button onclick="deleteRosterStudent('${c.studentId}')" class="text-rose-600 hover:text-rose-800 p-1"><i class="fa-solid fa-trash"></i></button>
                         </td>
                     </tr>
@@ -1155,19 +1188,40 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             e.preventDefault();
             const sid = document.getElementById('roster-input-id').value.trim().toUpperCase();
             const sname = document.getElementById('roster-input-name').value.trim();
-            if (!sid || !sname) return;
+            const passwordInput = document.getElementById('roster-input-password');
+            const studentPassword = passwordInput.value || createNumericPassword();
+            if (!sid || !sname || !/^\d{8}$/.test(studentPassword)) return;
 
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid), {
+                const existing = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid));
+                if (existing.exists()) {
+                    window.showModal("Duplicate Student ID", `${sid} is already registered.`);
+                    return;
+                }
+                const passwordSalt = createPasswordSalt();
+                const passwordHash = await hashStudentPassword(studentPassword, passwordSalt);
+                const createdAt = new Date().toISOString();
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid), {
                     studentId: sid,
                     studentName: sname,
-                    createdAt: new Date().toISOString()
+                    studentPassword,
+                    createdAt
                 });
-                globalRosterMap[sid] = { studentId: sid, studentName: sname };
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', sid), {
+                    studentId: sid,
+                    studentName: sname,
+                    passwordSalt,
+                    passwordHash,
+                    updatedAt: createdAt
+                });
+                await batch.commit();
+                globalRosterMap[sid] = { studentId: sid, studentName: sname, studentPassword, createdAt };
                 renderRosterTable();
                 document.getElementById('roster-input-id').value = '';
                 document.getElementById('roster-input-name').value = '';
-                window.showModal("Success", `Candidate ${sname} (${sid}) added to roster.`);
+                window.generateStudentPassword();
+                window.showModal("Success", `Candidate ${sname} (${sid}) added. Password: ${studentPassword}`);
             } catch (err) {
                 console.error("Add roster error:", err);
             }
@@ -1178,6 +1232,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const submissions = await getDocs(query(submissionsRef, where('studentId', '==', sid)));
             await Promise.all([
                 deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid)),
+                deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', sid)),
                 deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', sid)),
                 ...submissions.docs.map(item => deleteDoc(item.ref))
             ]);
@@ -1185,6 +1240,64 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             delete globalRosterMap[sid];
             submissions.docs.forEach(item => delete globalSubmissionsMap[item.id]);
         }
+
+        window.generateEditStudentPassword = function() {
+            document.getElementById('edit-student-password').value = createNumericPassword();
+        };
+
+        window.editRosterStudent = function(sid) {
+            const student = globalRosterMap[sid];
+            if (!student) return;
+            const html = `
+                <form onsubmit="submitRosterStudentEdit(event, '${sid}')" class="space-y-4">
+                    <div><label class="block text-xs font-bold mb-1">Student ID</label><input id="edit-student-id" required value="${escapeHtml(student.studentId)}" class="w-full px-3 py-2 border rounded-xl text-xs font-mono uppercase"></div>
+                    <div><label class="block text-xs font-bold mb-1">Candidate Name</label><input id="edit-student-name" required value="${escapeHtml(student.studentName)}" class="w-full px-3 py-2 border rounded-xl text-xs"></div>
+                    <div><label class="block text-xs font-bold mb-1">8-Digit Password</label><div class="flex gap-2"><input id="edit-student-password" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" value="${escapeHtml(student.studentPassword || '')}" class="flex-1 px-3 py-2 border rounded-xl text-xs font-mono tracking-widest"><button type="button" onclick="generateEditStudentPassword()" class="px-3 py-2 bg-slate-100 rounded-xl text-xs font-bold">Generate</button></div></div>
+                    <button type="submit" class="w-full px-4 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-bold">Save Student Changes</button>
+                </form>`;
+            window.showModal("Edit Student", html);
+        };
+
+        window.submitRosterStudentEdit = async function(event, oldSid) {
+            event.preventDefault();
+            const newSid = document.getElementById('edit-student-id').value.trim().toUpperCase();
+            const studentName = document.getElementById('edit-student-name').value.trim();
+            const studentPassword = document.getElementById('edit-student-password').value.trim();
+            if (!newSid || !studentName || !/^\d{8}$/.test(studentPassword)) return;
+
+            try {
+                if (newSid !== oldSid) {
+                    const [statusDoc, duplicateDoc] = await Promise.all([
+                        getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', oldSid)),
+                        getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', newSid))
+                    ]);
+                    if (statusDoc.exists()) throw new Error('Student ID cannot be changed after an exam submission. Name and password can still be edited.');
+                    if (duplicateDoc.exists()) throw new Error(`${newSid} is already registered.`);
+                }
+
+                const passwordSalt = createPasswordSalt();
+                const passwordHash = await hashStudentPassword(studentPassword, passwordSalt);
+                const updatedAt = new Date().toISOString();
+                const rosterRecord = { studentId: newSid, studentName, studentPassword, updatedAt };
+                const loginRecord = { studentId: newSid, studentName, passwordSalt, passwordHash, updatedAt };
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', newSid), rosterRecord, { merge: true });
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', newSid), loginRecord);
+                if (newSid !== oldSid) {
+                    batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', oldSid));
+                    batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', oldSid));
+                    delete globalRosterMap[oldSid];
+                }
+                await batch.commit();
+                globalRosterMap[newSid] = rosterRecord;
+                renderRosterTable();
+                window.closeModal();
+                window.showModal("Student Updated", `${studentName} (${newSid}) was updated successfully.`);
+            } catch (err) {
+                console.error('Student update error:', err);
+                window.showModal("Update Error", err.message || String(err));
+            }
+        };
 
         window.deleteRosterStudent = async function(sid) {
             const student = globalRosterMap[sid];

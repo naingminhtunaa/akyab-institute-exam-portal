@@ -1779,6 +1779,135 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             URL.revokeObjectURL(url);
         };
 
+        function parseCsvRows(csvText) {
+            const rows = [];
+            let row = [];
+            let value = '';
+            let quoted = false;
+            const text = String(csvText || '').replace(/^\uFEFF/, '');
+
+            for (let index = 0; index < text.length; index += 1) {
+                const char = text[index];
+                if (quoted) {
+                    if (char === '"' && text[index + 1] === '"') {
+                        value += '"';
+                        index += 1;
+                    } else if (char === '"') {
+                        quoted = false;
+                    } else {
+                        value += char;
+                    }
+                } else if (char === '"') {
+                    quoted = true;
+                } else if (char === ',') {
+                    row.push(value);
+                    value = '';
+                } else if (char === '\n') {
+                    row.push(value.replace(/\r$/, ''));
+                    if (row.some(cell => cell.trim() !== '')) rows.push(row);
+                    row = [];
+                    value = '';
+                } else {
+                    value += char;
+                }
+            }
+            row.push(value.replace(/\r$/, ''));
+            if (row.some(cell => cell.trim() !== '')) rows.push(row);
+            return rows;
+        }
+
+        window.handleRosterCSVUpload = async function(event) {
+            const input = event.target;
+            const file = input.files?.[0];
+            if (!file) return;
+
+            try {
+                const rows = parseCsvRows(await file.text());
+                if (rows.length < 2) throw new Error('CSV file has no candidate rows.');
+
+                const normalizeHeader = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+                const headers = rows[0].map(normalizeHeader);
+                const idIndex = headers.findIndex(header => ['studentid', 'id'].includes(header));
+                const nameIndex = headers.findIndex(header => ['candidatefullname', 'candidatename', 'studentname', 'fullname', 'name'].includes(header));
+                const passwordIndex = headers.findIndex(header => ['password', 'studentpassword'].includes(header));
+                if (idIndex < 0 || nameIndex < 0) {
+                    throw new Error('CSV headers must include Student ID and Candidate Full Name. Password is optional.');
+                }
+
+                const seenIds = new Set();
+                const candidates = [];
+                const errors = [];
+                let skippedExisting = 0;
+                let skippedDuplicate = 0;
+
+                rows.slice(1).forEach((row, rowOffset) => {
+                    const rowNumber = rowOffset + 2;
+                    const studentId = String(row[idIndex] || '').trim().toUpperCase();
+                    const studentName = String(row[nameIndex] || '').trim();
+                    const suppliedPassword = passwordIndex >= 0 ? String(row[passwordIndex] || '').trim() : '';
+                    if (!studentId && !studentName) return;
+                    if (!studentId || !studentName) {
+                        errors.push(`Row ${rowNumber}: Student ID and name are required.`);
+                        return;
+                    }
+                    if (globalRosterMap[studentId]) {
+                        skippedExisting += 1;
+                        return;
+                    }
+                    if (seenIds.has(studentId)) {
+                        skippedDuplicate += 1;
+                        return;
+                    }
+                    if (suppliedPassword && !/^\d{8}$/.test(suppliedPassword)) {
+                        errors.push(`Row ${rowNumber}: Password must be blank or exactly 8 digits.`);
+                        return;
+                    }
+                    seenIds.add(studentId);
+                    candidates.push({ studentId, studentName, studentPassword: suppliedPassword || createNumericPassword() });
+                });
+
+                if (errors.length) {
+                    throw new Error(`${errors.slice(0, 5).join(' ')}${errors.length > 5 ? ` Plus ${errors.length - 5} more error(s).` : ''}`);
+                }
+                if (candidates.length === 0) {
+                    window.showModal('Roster CSV Upload', `No new candidates to import. Existing IDs skipped: ${skippedExisting}. Duplicate CSV IDs skipped: ${skippedDuplicate}.`);
+                    return;
+                }
+                if (!window.confirm(`Import ${candidates.length} new candidate(s)? Blank passwords will be generated automatically.`)) return;
+
+                const now = new Date().toISOString();
+                const records = await Promise.all(candidates.map(async candidate => {
+                    const passwordSalt = createPasswordSalt();
+                    const passwordHash = await hashStudentPassword(candidate.studentPassword, passwordSalt);
+                    return {
+                        roster: { ...candidate, createdAt: now },
+                        login: { studentId: candidate.studentId, studentName: candidate.studentName, passwordSalt, passwordHash, updatedAt: now }
+                    };
+                }));
+
+                for (let start = 0; start < records.length; start += 200) {
+                    const batch = writeBatch(db);
+                    records.slice(start, start + 200).forEach(({ roster, login }) => {
+                        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', roster.studentId), roster);
+                        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', login.studentId), login);
+                    });
+                    await batch.commit();
+                }
+
+                records.forEach(({ roster }) => { globalRosterMap[roster.studentId] = roster; });
+                renderRosterTable();
+                window.showModal(
+                    'Roster Import Complete',
+                    `${records.length} candidate(s) imported. Existing IDs skipped: ${skippedExisting}. Duplicate CSV IDs skipped: ${skippedDuplicate}. Download the roster CSV to securely save generated passwords.`
+                );
+            } catch (error) {
+                console.error('Roster CSV upload error:', error);
+                window.showModal('Roster CSV Upload Error', escapeHtml(error.message || String(error)));
+            } finally {
+                input.value = '';
+            }
+        };
+
         window.seedDemoData = async function() {
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', 'AK9-001'), { studentId: 'AK9-001', studentName: 'Aung Kyaw' });

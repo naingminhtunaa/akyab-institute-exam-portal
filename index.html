@@ -225,6 +225,10 @@
                         <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Authorized Candidate Roster</h3>
                         <div class="flex items-center gap-2">
                             <span id="roster-count-badge" class="bg-slate-200 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full">0 Candidates</span>
+                            <input id="roster-csv-upload" type="file" accept=".csv,text/csv" class="hidden" onchange="handleRosterCSVUpload(event)">
+                            <button type="button" onclick="document.getElementById('roster-csv-upload').click()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">
+                                <i class="fa-solid fa-file-arrow-up mr-1"></i> Upload CSV
+                            </button>
                             <button type="button" onclick="exportRosterCSV()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">
                                 <i class="fa-solid fa-file-csv mr-1"></i> Download CSV
                             </button>

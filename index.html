@@ -69,7 +69,7 @@
                 <p class="text-xs text-black mt-1">Please login for Batch 9 Entrance Exam</p>
             </div>
 
-            <div class="p-6">
+            <div class="p-6 bg-[#0d1e5a]">
                 <!-- Role Toggle Buttons -->
                 <div class="flex p-1 bg-slate-100 rounded-xl mb-6 border border-slate-200">
                     <button id="btn-role-student" onclick="setAuthRole('student')" class="flex-1 py-2 text-xs font-bold rounded-lg bg-white text-brand-700 shadow-sm transition-all">
@@ -83,18 +83,18 @@
                 <!-- Student Login Form -->
                 <form id="form-student-login" onsubmit="handleStudentLogin(event)" class="space-y-4">
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Student ID</label>
+                        <label class="block text-xs font-bold text-white uppercase tracking-wider mb-1">Student ID</label>
                         <input type="text" id="input-student-id" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm font-semibold uppercase">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Full Candidate Name</label>
+                        <label class="block text-xs font-bold text-white uppercase tracking-wider mb-1">Full Candidate Name</label>
                         <input type="text" id="input-student-name" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Student Password</label>
+                        <label class="block text-xs font-bold text-white uppercase tracking-wider mb-1">Student Password</label>
                         <input type="password" id="input-student-password" required inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="current-password" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm tracking-widest">
                     </div>
-                    <button id="btn-student-login-submit" type="submit" class="w-full py-3 bg-[#0d1e5a] hover:bg-[#091643] text-white font-bold rounded-xl shadow-lg shadow-slate-900/20 text-sm transition-all flex items-center justify-center gap-2">
+                    <button id="btn-student-login-submit" type="submit" class="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 text-sm transition-all flex items-center justify-center gap-2">
                         <span>Access Student Gate</span> <i class="fa-solid fa-arrow-right"></i>
                     </button>
                 </form>
@@ -102,11 +102,11 @@
                 <!-- Admin Login Form -->
                 <form id="form-admin-login" onsubmit="handleAdminLogin(event)" class="space-y-4 hidden">
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Admin Email</label>
+                        <label class="block text-xs font-bold text-white uppercase tracking-wider mb-1">Admin Email</label>
                         <input type="email" id="input-admin-user" required autocomplete="username" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Password</label>
+                        <label class="block text-xs font-bold text-white uppercase tracking-wider mb-1">Password</label>
                         <input type="password" id="input-admin-pass" required autocomplete="current-password" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm">
                     </div>
                     <button type="submit" class="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-lg text-sm transition-all flex items-center justify-center gap-2">

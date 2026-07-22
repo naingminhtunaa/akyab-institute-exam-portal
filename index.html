@@ -221,9 +221,14 @@
                 </div>
 
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div class="p-4 border-b bg-slate-50/50 flex justify-between items-center">
+                    <div class="p-4 border-b bg-slate-50/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                         <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Authorized Candidate Roster</h3>
-                        <span id="roster-count-badge" class="bg-slate-200 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full">0 Candidates</span>
+                        <div class="flex items-center gap-2">
+                            <span id="roster-count-badge" class="bg-slate-200 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full">0 Candidates</span>
+                            <button type="button" onclick="exportRosterCSV()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all">
+                                <i class="fa-solid fa-file-csv mr-1"></i> Download CSV
+                            </button>
+                        </div>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse text-xs">

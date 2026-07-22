@@ -1747,6 +1747,37 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             document.body.removeChild(link);
         };
 
+        window.exportRosterCSV = function() {
+            const candidates = Object.values(globalRosterMap).sort((a, b) =>
+                String(a.studentId || '').localeCompare(String(b.studentId || ''), undefined, { numeric: true })
+            );
+            if (candidates.length === 0) {
+                window.showModal("Export Roster CSV", "No authorized candidates available to export.");
+                return;
+            }
+
+            const escapeCsvValue = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+            const rows = [
+                ["Student ID", "Candidate Full Name", "Status"],
+                ...candidates.map(candidate => [
+                    candidate.studentId,
+                    candidate.studentName,
+                    'Authorized'
+                ])
+            ];
+            const csv = '\uFEFF' + rows.map(row => row.map(escapeCsvValue).join(',')).join('\r\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const date = new Date().toISOString().slice(0, 10);
+            link.href = url;
+            link.download = `akyab_batch9_authorized_candidates_${date}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        };
+
         window.seedDemoData = async function() {
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', 'AK9-001'), { studentId: 'AK9-001', studentName: 'Aung Kyaw' });

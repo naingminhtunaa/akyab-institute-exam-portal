@@ -172,6 +172,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             return { objective, essay, total: objective + essay };
         }
 
+        function getSubmissionTotalScore(sub) {
+            return (Number(sub?.autoScore) || 0) + (Number(sub?.essayScore) || 0);
+        }
+
         function refreshExamPoints() {
             const badge = document.getElementById('builder-total-points');
             if (!badge) return;
@@ -885,7 +889,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 await batch.commit();
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
-                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}. Essay Pending: ${examTotals.essay} marks. Total Exam Marks: ${examTotals.total} / 100.`);
+                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Total Score: ${autoScore} / 100 (Essay grading pending: ${examTotals.essay} marks).`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
                 document.getElementById('exam-start-gate').classList.add('hidden');
@@ -1045,7 +1049,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                             <p class="text-xs text-slate-500">Submitted At: ${new Date(sub.submittedAt).toLocaleString()}</p>
                         </div>
                         <div class="text-right">
-                            <span class="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">Objective Score: ${sub.autoScore} / ${sub.totalObjectivePossible}</span>
+                            <span class="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">Total Score: ${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}</span>
                         </div>
                     </div>
                     <div class="space-y-4">
@@ -1468,7 +1472,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     <td class="p-3 font-bold font-mono text-slate-900">${sub.studentId}</td>
                     <td class="p-3 font-semibold text-slate-800">${sub.studentName}</td>
                     <td class="p-3 text-slate-500">${sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Date unavailable'}</td>
-                    <td class="p-3 font-extrabold text-emerald-600">${sub.autoScore} / ${sub.totalObjectivePossible} <span class="block text-[10px] text-slate-500">Total Exam: ${sub.totalExamPossible || 100}</span></td>
+                    <td class="p-3 font-extrabold text-emerald-600">${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}${sub.essayGraded ? '' : '<span class="block text-[10px] text-amber-600">Essay Pending</span>'}</td>
                     <td class="p-3 text-right space-x-2">
                         <button onclick="viewCandidateSubmissionDetails('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs">Inspect</button>
                         <button onclick="gradeEssayModal('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold rounded-lg text-xs">Grade Essay</button>
@@ -1518,7 +1522,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                             <p class="text-xs text-slate-500">Submitted: ${new Date(sub.submittedAt).toLocaleString()}</p>
                         </div>
                         <div class="text-right">
-                            <span class="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">Objective Score: ${sub.autoScore} / ${sub.totalObjectivePossible}</span>
+                            <span class="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">Total Score: ${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}</span>
                         </div>
                     </div>
                     <div class="space-y-4">
@@ -1566,6 +1570,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     essayScore: score,
                     adminRemarks: remarks
                 });
+                globalSubmissionsMap[subId].essayGraded = true;
+                globalSubmissionsMap[subId].essayScore = score;
+                globalSubmissionsMap[subId].adminRemarks = remarks;
+                renderSubmissionsTable();
                 window.closeModal();
                 window.showModal("Success", "Essay grade successfully recorded.");
             } catch (err) {
@@ -1580,9 +1588,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 return;
             }
 
-            let csvContent = "data:text/csv;charset=utf-8,Student ID,Candidate Name,Submitted At,Objective Score,Total Possible\n";
+            let csvContent = "data:text/csv;charset=utf-8,Student ID,Candidate Name,Submitted At,Total Score,Total Possible\n";
             subs.forEach(s => {
-                csvContent += `"${s.studentId}","${s.studentName}","${s.submittedAt}",${s.autoScore},${s.totalObjectivePossible}\n`;
+                csvContent += `"${s.studentId}","${s.studentName}","${s.submittedAt}",${getSubmissionTotalScore(s)},${s.totalExamPossible || 100}\n`;
             });
 
             const encodedUri = encodeURI(csvContent);

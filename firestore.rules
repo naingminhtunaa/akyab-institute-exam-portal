@@ -49,7 +49,12 @@ service cloud.firestore {
         && request.resource.data.studentName.size() <= 150
         && getAfter(/databases/$(database)/documents/artifacts/akyab-institute-batch-9-shared/public/data/exam_submission_status/$(request.resource.data.studentId)).data.submissionId == submissionId;
 
-      allow get, list: if isAdmin()
+      allow get: if isAdmin()
+        || (signedIn() && resource.data.ownerUid == request.auth.uid)
+        || (signedIn()
+          && get(/databases/$(database)/documents/artifacts/akyab-institute-batch-9-shared/public/data/exam_submission_status/$(resource.data.studentId)).data.submissionId == submissionId);
+
+      allow list: if isAdmin()
         || (signedIn() && resource.data.ownerUid == request.auth.uid);
 
       allow update, delete: if isAdmin();

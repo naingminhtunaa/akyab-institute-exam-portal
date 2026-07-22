@@ -324,12 +324,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
             if (role === 'student') {
                 btnStudent.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-white text-brand-700 shadow-sm transition-all";
-                btnAdmin.className = "flex-1 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-all";
+                btnAdmin.className = "flex-1 py-2 text-xs font-bold rounded-lg text-white hover:text-slate-200 transition-all";
                 formStudent.classList.remove('hidden');
                 formAdmin.classList.add('hidden');
             } else {
                 btnAdmin.className = "flex-1 py-2 text-xs font-bold rounded-lg bg-white text-brand-700 shadow-sm transition-all";
-                btnStudent.className = "flex-1 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-all";
+                btnStudent.className = "flex-1 py-2 text-xs font-bold rounded-lg text-white hover:text-slate-200 transition-all";
                 formAdmin.classList.remove('hidden');
                 formStudent.classList.add('hidden');
             }

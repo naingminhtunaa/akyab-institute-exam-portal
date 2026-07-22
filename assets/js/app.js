@@ -1758,10 +1758,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
             const escapeCsvValue = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
             const rows = [
-                ["Student ID", "Candidate Full Name", "Status"],
+                ["Student ID", "Candidate Full Name", "Password", "Status"],
                 ...candidates.map(candidate => [
                     candidate.studentId,
                     candidate.studentName,
+                    candidate.studentPassword || '',
                     'Authorized'
                 ])
             ];

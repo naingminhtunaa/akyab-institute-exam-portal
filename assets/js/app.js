@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { firebaseConfig, appDataId, adminEmail } from "./firebase-config.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, signInWithEmailAndPassword, updatePassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, where, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, collection, onSnapshot, query, where, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const appId = appDataId;
 
@@ -231,6 +231,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     };
                 });
                 renderSubmissionsTable();
+                await Promise.allSettled(Object.values(globalSubmissionsMap).map(async sub => {
+                    if (!sub.studentId) return;
+                    const statusRef = doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', sub.studentId);
+                    const statusDoc = await getDoc(statusRef);
+                    if (!statusDoc.exists()) {
+                        await setDoc(statusRef, {
+                            studentId: sub.studentId,
+                            ownerUid: sub.ownerUid || 'legacy-submission',
+                            submissionId: sub._docId || sub.submissionId,
+                            submittedAt: sub.submittedAt || new Date().toISOString()
+                        });
+                    }
+                }));
             } catch (err) {
                 console.error("Submissions load error:", err);
             }
@@ -430,9 +443,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
             let existing;
             try {
-                const subsRef = collection(db, 'artifacts', appId, 'public', 'data', 'exam_submissions');
-                const snapshot = await getDocs(query(subsRef, where('ownerUid', '==', auth.currentUser.uid), limit(1)));
-                if (!snapshot.empty) existing = snapshot.docs[0].data();
+                const statusRef = doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', sid);
+                const statusDoc = await getDoc(statusRef);
+                existing = statusDoc.exists();
             } catch (err) {
                 console.warn("Student submission check error:", err);
             }
@@ -782,7 +795,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             };
 
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', submissionId), submissionRecord);
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', submissionId), submissionRecord);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', currentStudentProfile.studentId), {
+                    studentId: currentStudentProfile.studentId,
+                    ownerUid: auth.currentUser.uid,
+                    submissionId: submissionId,
+                    submittedAt: submissionRecord.submittedAt
+                });
+                await batch.commit();
                 window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
@@ -1039,6 +1060,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const submissions = await getDocs(query(submissionsRef, where('studentId', '==', sid)));
             await Promise.all([
                 deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid)),
+                deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', sid)),
                 ...submissions.docs.map(item => deleteDoc(item.ref))
             ]);
 
@@ -1377,7 +1399,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             if (!window.confirm(`Delete the submission for ${sub.studentName} (${sub.studentId})? This cannot be undone.`)) return;
 
             try {
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', subId));
+                const batch = writeBatch(db);
+                batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', subId));
+                batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submission_status', sub.studentId));
+                await batch.commit();
                 delete globalSubmissionsMap[subId];
                 renderSubmissionsTable();
                 window.showModal("Submission Deleted", "The submission was deleted successfully.");

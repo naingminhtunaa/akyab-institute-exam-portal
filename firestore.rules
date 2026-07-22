@@ -43,11 +43,29 @@ service cloud.firestore {
         && request.resource.data.essayScore == 0
         && request.resource.data.adminRemarks == ''
         && request.resource.data.studentId.size() <= 40
-        && request.resource.data.studentName.size() <= 150;
+        && request.resource.data.studentName.size() <= 150
+        && getAfter(/databases/$(database)/documents/artifacts/akyab-institute-batch-9-shared/public/data/exam_submission_status/$(request.resource.data.studentId)).data.submissionId == submissionId;
 
       allow get, list: if isAdmin()
         || (signedIn() && resource.data.ownerUid == request.auth.uid);
 
+      allow update, delete: if isAdmin();
+    }
+
+    match /artifacts/akyab-institute-batch-9-shared/public/data/exam_submission_status/{studentId} {
+      // This non-sensitive lock prevents a Student ID from submitting twice,
+      // even from a different browser or device.
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create: if isAdmin() || (signedIn()
+        && request.resource.data.keys().hasOnly([
+          'studentId', 'ownerUid', 'submissionId', 'submittedAt'
+        ])
+        && request.resource.data.studentId == studentId
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.submissionId is string
+        && request.resource.data.submittedAt is string
+        && getAfter(/databases/$(database)/documents/artifacts/akyab-institute-batch-9-shared/public/data/exam_submissions/$(request.resource.data.submissionId)).data.ownerUid == request.auth.uid);
       allow update, delete: if isAdmin();
     }
 

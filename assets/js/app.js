@@ -212,6 +212,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             return (Number(sub?.autoScore) || 0) + (Number(sub?.manualScore ?? sub?.essayScore) || 0);
         }
 
+        function getSubmissionManualPossible(sub) {
+            const totalPossible = Number(sub?.totalExamPossible) || getExamPointTotals().total || 100;
+            const objectivePossible = Number(sub?.totalObjectivePossible);
+            if (Number.isFinite(objectivePossible) && objectivePossible >= 0) {
+                return Math.max(0, totalPossible - objectivePossible);
+            }
+            return getExamPointTotals().manual;
+        }
+
         function refreshExamPoints() {
             const badge = document.getElementById('builder-total-points');
             if (!badge) return;
@@ -335,7 +344,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         autoScore: recalculatedObjective?.score ?? data.autoScore ?? data.objectiveScore ?? data.score ?? 0,
                         totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0,
                         totalExamPossible: data.totalExamPossible ?? 100,
-                        totalManualPossible: data.totalManualPossible ?? data.totalEssayPossible ?? getExamPointTotals().manual,
+                        totalManualPossible: Math.max(0, (data.totalExamPossible ?? 100) - (recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0)),
                         manualScore: data.manualScore ?? data.essayScore ?? 0,
                         manualGraded: data.manualGraded ?? data.essayGraded ?? false
                     };
@@ -906,7 +915,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 answers: answersMap,
                 autoScore: autoScore,
                 totalObjectivePossible: totalObjectivePossible,
-                totalManualPossible: examTotals.manual,
+                totalManualPossible: Math.max(0, examTotals.total - totalObjectivePossible),
                 totalExamPossible: examTotals.total,
                 manualGraded: false,
                 manualScore: 0,
@@ -926,7 +935,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 globalSubmissionsMap[submissionId] = { ...submissionRecord, _docId: submissionId };
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
-                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${examTotals.objective}. Short Answer and Essay grading pending: ${examTotals.manual} marks.`);
+                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}. Short Answer and Essay grading pending: ${Math.max(0, examTotals.total - totalObjectivePossible)} marks.`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
                 document.getElementById('exam-start-gate').classList.add('hidden');
@@ -1091,7 +1100,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                 manualScore: data.manualScore ?? data.essayScore ?? 0,
                                 manualGraded: data.manualGraded ?? data.essayGraded ?? false,
                                 totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0,
-                                totalManualPossible: data.totalManualPossible ?? data.totalEssayPossible ?? getExamPointTotals().manual,
+                                totalManualPossible: Math.max(0, (data.totalExamPossible ?? 100) - (recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0)),
                                 totalExamPossible: data.totalExamPossible ?? 100
                             };
                             globalSubmissionsMap[submissionDoc.id] = sub;
@@ -1634,8 +1643,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         ${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}
                         <span class="block text-[10px] text-slate-500">Objective: ${sub.autoScore || 0} / ${sub.totalObjectivePossible || getExamPointTotals().objective}</span>
                         ${sub.manualGraded
-                            ? `<span class="block text-[10px] text-indigo-600">Short Answer & Essay: ${sub.manualScore ?? sub.essayScore ?? 0} / ${sub.totalManualPossible || getExamPointTotals().manual}</span>`
-                            : `<span class="block text-[10px] text-amber-600">Short Answer and Essay Pending (${sub.totalManualPossible || getExamPointTotals().manual} marks)</span>`}
+                            ? `<span class="block text-[10px] text-indigo-600">Short Answer & Essay: ${sub.manualScore ?? sub.essayScore ?? 0} / ${getSubmissionManualPossible(sub)}</span>`
+                            : `<span class="block text-[10px] text-amber-600">Short Answer and Essay Pending (${getSubmissionManualPossible(sub)} marks)</span>`}
                     </td>
                     <td class="p-3 text-right space-x-2">
                         <button onclick="viewCandidateSubmissionDetails('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs">Inspect</button>
@@ -1702,7 +1711,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const sub = globalSubmissionsMap[subId];
             if (!sub) return;
 
-            const manualPossible = Number(sub.totalManualPossible) || getExamPointTotals().manual;
+            const manualPossible = getSubmissionManualPossible(sub);
             let answerCards = '';
             (window.currentExamData?.sections || []).forEach((section, sIdx) => {
                 (section.parts || []).forEach((part, pIdx) => {
@@ -1749,7 +1758,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             e.preventDefault();
             const sub = globalSubmissionsMap[subId];
             if (!sub) return;
-            const manualPossible = Number(sub.totalManualPossible) || getExamPointTotals().manual;
+            const manualPossible = getSubmissionManualPossible(sub);
             const score = Number(document.getElementById('input-manual-score').value);
             const remarks = document.getElementById('input-manual-remarks').value.trim();
             if (!Number.isFinite(score) || score < 0 || score > manualPossible) {

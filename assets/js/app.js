@@ -268,14 +268,22 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 const sectionC = Math.min(legacyTotal, maximums.sectionC);
                 manual = { sectionC, section1Part1: Math.min(Math.max(legacyTotal - sectionC, 0), maximums.section1Part1) };
             }
-            const sectionCObjective = (window.currentExamData?.sections?.[2]?.parts || [])
-                .reduce((sum, _, pIdx) => sum + calculatePartObjectiveScore(answers, 2, pIdx), 0);
+            const sections = window.currentExamData?.sections || [];
+            const findSectionIndex = (patterns, fallback) => {
+                const index = sections.findIndex(section => patterns.some(pattern => pattern.test(String(section.title || ''))));
+                return index >= 0 ? index : Math.min(fallback, Math.max(sections.length - 1, 0));
+            };
+            const section1Index = findSectionIndex([/\bsection\s*(?:1|a)\b/i], 0);
+            const section2Index = findSectionIndex([/\bsection\s*(?:2|b)\b/i], 1);
+            const sectionCIndex = findSectionIndex([/\bsection\s*c\b/i], 2);
+            const sectionCObjective = (sections[sectionCIndex]?.parts || [])
+                .reduce((sum, _, pIdx) => sum + calculatePartObjectiveScore(answers, sectionCIndex, pIdx), 0);
             return {
-                section1Part1: calculatePartObjectiveScore(answers, 0, 0) + (Number(manual.section1Part1) || 0),
-                section1Part2: calculatePartObjectiveScore(answers, 0, 1),
-                section1Part3: calculatePartObjectiveScore(answers, 0, 2),
-                section2Part1: calculatePartObjectiveScore(answers, 1, 0),
-                section2Part2: calculatePartObjectiveScore(answers, 1, 1),
+                section1Part1: calculatePartObjectiveScore(answers, section1Index, 0) + (Number(manual.section1Part1) || 0),
+                section1Part2: calculatePartObjectiveScore(answers, section1Index, 1),
+                section1Part3: calculatePartObjectiveScore(answers, section1Index, 2),
+                section2Part1: calculatePartObjectiveScore(answers, section2Index, 0),
+                section2Part2: calculatePartObjectiveScore(answers, section2Index, 1),
                 sectionC: sectionCObjective + (Number(manual.sectionC) || 0)
             };
         }

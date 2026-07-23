@@ -1881,6 +1881,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         const wordCount = item.type === 'essay' ? ` · ${getCleanWordCount(answer)} words` : '';
                         answerCards += `
                             <div class="p-3 bg-white border rounded-xl space-y-2">
+                                <p class="text-[10px] font-extrabold uppercase text-slate-500">${escapeHtml(section.title || `Section ${sIdx + 1}`)} · ${escapeHtml(part.partTitle || `Part ${pIdx + 1}`)}</p>
                                 <div class="flex justify-between gap-3">
                                     <p class="text-xs font-bold text-slate-900">${escapeHtml(item.questionText || 'Question')}</p>
                                     <span class="shrink-0 text-[10px] font-extrabold ${item.type === 'short' ? 'bg-cyan-100 text-cyan-800' : 'bg-indigo-100 text-indigo-800'} px-2 py-1 rounded">${item.type === 'short' ? 'Short Answer' : 'Essay'} · ${Number(item.points) || 0} marks${wordCount}</span>
@@ -1905,11 +1906,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                 <input type="number" id="input-manual-section1-part1" value="${Number(savedBreakdown.section1Part1) || 0}" min="0" max="${manualMaximums.section1Part1}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 2 · Part 1 Essay / ${manualMaximums.section2Part1}</label>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 2 · Part 1 English Essay / ${manualMaximums.section2Part1}</label>
                                 <input type="number" id="input-manual-section2-part1" value="${Number(savedBreakdown.section2Part1) || 0}" min="0" max="${manualMaximums.section2Part1}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 2 · Part 2 Essay / ${manualMaximums.section2Part2}</label>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 2 · Part 2 Myanmar Essay / ${manualMaximums.section2Part2}</label>
                                 <input type="number" id="input-manual-section2-part2" value="${Number(savedBreakdown.section2Part2) || 0}" min="0" max="${manualMaximums.section2Part2}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
                             </div>
                         </div>
@@ -1996,7 +1997,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const rows = [[
                 'Student ID', 'Candidate Name', 'Submitted At',
                 'Section 1 - Part 1', 'Section 1 - Part 2', 'Section 1 - Part 3',
-                'Section 2 - Part 1', 'Section 2 - Part 2', 'Section C',
+                'Section 2 - Part 1 (English Essay)', 'Section 2 - Part 2 (Myanmar Essay)', 'Section C',
                 'Total Score', 'Total Possible'
             ]];
             subs.forEach(sub => {

@@ -956,7 +956,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const totalObjectivePossible = objectiveResult.possible;
 
             const submissionId = `${currentStudentProfile.studentId}_${Date.now()}`;
-            const examTotals = getExamPointTotals();
+            const officialExamTotal = 100;
+            const officialManualPossible = Math.max(0, officialExamTotal - totalObjectivePossible);
             const submissionRecord = {
                 submissionId: submissionId,
                 ownerUid: auth.currentUser.uid,
@@ -968,8 +969,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 totalObjectivePossible: totalObjectivePossible,
                 // Keep create-time field names compatible with the currently published Firestore rules.
                 // The app maps these legacy names to the Short Answer + Essay manual-grading model.
-                totalEssayPossible: Math.max(0, examTotals.total - totalObjectivePossible),
-                totalExamPossible: examTotals.total,
+                totalEssayPossible: officialManualPossible,
+                totalExamPossible: officialExamTotal,
                 essayGraded: false,
                 essayScore: 0,
                 adminRemarks: ""
@@ -988,14 +989,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 globalSubmissionsMap[submissionId] = { ...submissionRecord, _docId: submissionId };
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
-                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}. Short Answer and Essay grading pending: ${Math.max(0, examTotals.total - totalObjectivePossible)} marks.`);
+                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}. Short Answer and Essay grading pending: ${officialManualPossible} marks.`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
                 document.getElementById('exam-start-gate').classList.add('hidden');
                 document.getElementById('already-submitted-banner').classList.remove('hidden');
             } catch (err) {
                 console.error("Submission save error:", err);
-                window.showModal("Submission Error", "Failed to save submission to cloud database. Please retry.");
+                window.showModal("Submission Error", `Failed to save submission to cloud database. ${escapeHtml(err.code || err.message || '')}`);
                 window.startCandidateExam(true);
             }
         };

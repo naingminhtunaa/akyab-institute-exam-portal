@@ -157,14 +157,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         }
         window.getCleanWordCount = getCleanWordCount;
 
+        function isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item) {
+            return item?.type === 'short' && sIdx === 0 && pIdx === 0 && qIdx >= 0 && qIdx < 4;
+        }
+
         function getExamPointTotals() {
             let objective = 0;
             let manual = 0;
-            for (const section of window.currentExamData?.sections || []) {
-                for (const part of section.parts || []) {
-                    for (const item of part.items || []) {
+            for (const [sIdx, section] of (window.currentExamData?.sections || []).entries()) {
+                for (const [pIdx, part] of (section.parts || []).entries()) {
+                    for (const [qIdx, item] of (part.items || []).entries()) {
                         const points = Number(item.points) || 0;
-                        if (item.type === 'short' || item.type === 'essay') manual += points;
+                        if (item.type === 'essay' || isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) manual += points;
                         else objective += points;
                     }
                 }
@@ -183,6 +187,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         if (item.type === 'mcq') {
                             possible += points;
                             if (answers[qName] === item.correctOption) score += points;
+                        } else if (item.type === 'short' && !isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
+                            possible += points;
+                            const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+                            if (normalizeAnswer(answers[qName]) && normalizeAnswer(answers[qName]) === normalizeAnswer(item.correctAnswer)) score += points;
                         } else if (item.type === 'tf') {
                             possible += points;
                             if ((!item.subItems || item.subItems.length === 0) && item.correctAnswer) {
@@ -959,7 +967,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                             isCorrectHTML = `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Correct: ${correct})</span>`;
                                         }
                                     } else if (item.type === 'short') {
-                                        isCorrectHTML = `<span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Manual grading · ${item.points || 1} marks</span>`;
+                                        if (isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
+                                            isCorrectHTML = `<span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Manual grading · ${item.points || 1} marks</span>`;
+                                        } else {
+                                            const normalizedGiven = String(sub.answers[qName] || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+                                            const normalizedCorrect = String(item.correctAnswer || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+                                            isCorrectHTML = normalizedGiven && normalizedGiven === normalizedCorrect
+                                                ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Correct (+${item.points || 1})</span>`
+                                                : `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Correct: ${escapeHtml(item.correctAnswer || '')})</span>`;
+                                        }
                                     } else if (item.type === 'essay') {
                                         const wordCount = getCleanWordCount(sub.answers[qName] || '');
                                         isCorrectHTML = `<span class="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">${wordCount} words</span>`;
@@ -1691,7 +1707,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             (window.currentExamData?.sections || []).forEach((section, sIdx) => {
                 (section.parts || []).forEach((part, pIdx) => {
                     (part.items || []).forEach((item, qIdx) => {
-                        if (item.type !== 'short' && item.type !== 'essay') return;
+                        if (item.type !== 'essay' && !isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) return;
                         const answer = String(sub.answers?.[`q_${sIdx}_${pIdx}_${qIdx}`] || '').trim();
                         const wordCount = item.type === 'essay' ? ` · ${getCleanWordCount(answer)} words` : '';
                         answerCards += `

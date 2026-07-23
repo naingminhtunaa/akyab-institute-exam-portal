@@ -255,36 +255,64 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             return score;
         }
 
+        function getExamSectionIndexes() {
+            const sections = window.currentExamData?.sections || [];
+            const findIndex = (patterns, fallback) => {
+                const index = sections.findIndex(section => patterns.some(pattern => pattern.test(String(section.title || ''))));
+                return index >= 0 ? index : Math.min(fallback, Math.max(sections.length - 1, 0));
+            };
+            return {
+                section1: findIndex([/\bsection\s*(?:1|a)\b/i], 0),
+                section2: findIndex([/\bsection\s*(?:2|b)\b/i], 1),
+                sectionC: findIndex([/\bsection\s*c\b/i], 2)
+            };
+        }
+
         function getManualGroupMaximums() {
-            return { section1Part1: 8, sectionC: 40 };
+            const { section2 } = getExamSectionIndexes();
+            const essayPoints = partIndex => (window.currentExamData?.sections?.[section2]?.parts?.[partIndex]?.items || [])
+                .filter(item => item.type === 'essay')
+                .reduce((sum, item) => sum + (Number(item.points) || 0), 0);
+            const detectedPart1 = essayPoints(0);
+            const detectedPart2 = essayPoints(1);
+            return {
+                section1Part1: 8,
+                section2Part1: detectedPart1 || 20,
+                section2Part2: detectedPart2 || 20
+            };
+        }
+
+        function normalizeManualScoreBreakdown(sub) {
+            const maximums = getManualGroupMaximums();
+            const saved = sub?.manualScoreBreakdown || {};
+            if ('section2Part1' in saved || 'section2Part2' in saved) {
+                return {
+                    section1Part1: Number(saved.section1Part1) || 0,
+                    section2Part1: Number(saved.section2Part1) || 0,
+                    section2Part2: Number(saved.section2Part2) || 0
+                };
+            }
+            const legacyTotal = Number(saved.sectionC ?? (sub?.manualGraded ? sub.manualScore ?? sub.essayScore : 0)) || 0;
+            const section2Part1 = Math.min(legacyTotal, maximums.section2Part1);
+            const section2Part2 = Math.min(Math.max(legacyTotal - section2Part1, 0), maximums.section2Part2);
+            const legacyShort = Number(saved.section1Part1) || Math.min(Math.max(legacyTotal - section2Part1 - section2Part2, 0), maximums.section1Part1);
+            return { section1Part1: legacyShort, section2Part1, section2Part2 };
         }
 
         function getSubmissionScoreBreakdown(sub) {
             const answers = sub?.answers || {};
-            let manual = sub?.manualScoreBreakdown || {};
-            if (!Object.keys(manual).length && sub?.manualGraded) {
-                const maximums = getManualGroupMaximums();
-                const legacyTotal = Number(sub.manualScore ?? sub.essayScore) || 0;
-                const sectionC = Math.min(legacyTotal, maximums.sectionC);
-                manual = { sectionC, section1Part1: Math.min(Math.max(legacyTotal - sectionC, 0), maximums.section1Part1) };
-            }
+            const manual = normalizeManualScoreBreakdown(sub);
             const sections = window.currentExamData?.sections || [];
-            const findSectionIndex = (patterns, fallback) => {
-                const index = sections.findIndex(section => patterns.some(pattern => pattern.test(String(section.title || ''))));
-                return index >= 0 ? index : Math.min(fallback, Math.max(sections.length - 1, 0));
-            };
-            const section1Index = findSectionIndex([/\bsection\s*(?:1|a)\b/i], 0);
-            const section2Index = findSectionIndex([/\bsection\s*(?:2|b)\b/i], 1);
-            const sectionCIndex = findSectionIndex([/\bsection\s*c\b/i], 2);
+            const { section1: section1Index, section2: section2Index, sectionC: sectionCIndex } = getExamSectionIndexes();
             const sectionCObjective = (sections[sectionCIndex]?.parts || [])
                 .reduce((sum, _, pIdx) => sum + calculatePartObjectiveScore(answers, sectionCIndex, pIdx), 0);
             return {
                 section1Part1: calculatePartObjectiveScore(answers, section1Index, 0) + (Number(manual.section1Part1) || 0),
                 section1Part2: calculatePartObjectiveScore(answers, section1Index, 1),
                 section1Part3: calculatePartObjectiveScore(answers, section1Index, 2),
-                section2Part1: calculatePartObjectiveScore(answers, section2Index, 0),
-                section2Part2: calculatePartObjectiveScore(answers, section2Index, 1),
-                sectionC: sectionCObjective + (Number(manual.sectionC) || 0)
+                section2Part1: calculatePartObjectiveScore(answers, section2Index, 0) + manual.section2Part1,
+                section2Part2: calculatePartObjectiveScore(answers, section2Index, 1) + manual.section2Part2,
+                sectionC: sectionCObjective
             };
         }
 
@@ -1843,7 +1871,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
             const manualPossible = getSubmissionManualPossible(sub);
             const manualMaximums = getManualGroupMaximums();
-            const savedBreakdown = sub.manualScoreBreakdown || {};
+            const savedBreakdown = normalizeManualScoreBreakdown(sub);
             let answerCards = '';
             (window.currentExamData?.sections || []).forEach((section, sIdx) => {
                 (section.parts || []).forEach((part, pIdx) => {
@@ -1871,17 +1899,21 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     </div>
                     <div class="space-y-3 max-h-80 overflow-y-auto">${answerCards || '<p class="text-xs text-slate-400">No short-answer or essay questions found.</p>'}</div>
                     <form onsubmit="submitManualGrade(event, '${subId}')" class="space-y-4 border-t pt-4">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">Section 1 · Part 1 Short Answers / ${manualMaximums.section1Part1}</label>
                                 <input type="number" id="input-manual-section1-part1" value="${Number(savedBreakdown.section1Part1) || 0}" min="0" max="${manualMaximums.section1Part1}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-slate-700 mb-1">Section C Essay / ${manualMaximums.sectionC}</label>
-                                <input type="number" id="input-manual-section-c" value="${Number(savedBreakdown.sectionC) || 0}" min="0" max="${manualMaximums.sectionC}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 2 · Part 1 Essay / ${manualMaximums.section2Part1}</label>
+                                <input type="number" id="input-manual-section2-part1" value="${Number(savedBreakdown.section2Part1) || 0}" min="0" max="${manualMaximums.section2Part1}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 2 · Part 2 Essay / ${manualMaximums.section2Part2}</label>
+                                <input type="number" id="input-manual-section2-part2" value="${Number(savedBreakdown.section2Part2) || 0}" min="0" max="${manualMaximums.section2Part2}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
                             </div>
                         </div>
-                        <p class="text-xs font-extrabold text-indigo-700">Short Answer and Essay Total: <span id="manual-grade-total">${(Number(savedBreakdown.section1Part1) || 0) + (Number(savedBreakdown.sectionC) || 0)}</span> / ${manualPossible}</p>
+                        <p class="text-xs font-extrabold text-indigo-700">Short Answer and Essay Total: <span id="manual-grade-total">${(Number(savedBreakdown.section1Part1) || 0) + (Number(savedBreakdown.section2Part1) || 0) + (Number(savedBreakdown.section2Part2) || 0)}</span> / ${manualPossible}</p>
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">Admin Examiner Remarks</label>
                             <textarea id="input-manual-remarks" rows="3" class="w-full px-3 py-2 border rounded-xl text-xs">${sub.adminRemarks || ''}</textarea>
@@ -1895,9 +1927,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         window.updateManualGradeTotal = function() {
             const shortScore = Number(document.getElementById('input-manual-section1-part1')?.value) || 0;
-            const essayScore = Number(document.getElementById('input-manual-section-c')?.value) || 0;
+            const essayPart1Score = Number(document.getElementById('input-manual-section2-part1')?.value) || 0;
+            const essayPart2Score = Number(document.getElementById('input-manual-section2-part2')?.value) || 0;
             const total = document.getElementById('manual-grade-total');
-            if (total) total.textContent = shortScore + essayScore;
+            if (total) total.textContent = shortScore + essayPart1Score + essayPart2Score;
         };
 
         window.submitManualGrade = async function(e, subId) {
@@ -1907,17 +1940,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             const manualPossible = getSubmissionManualPossible(sub);
             const manualMaximums = getManualGroupMaximums();
             const section1Part1Score = Number(document.getElementById('input-manual-section1-part1').value);
-            const sectionCScore = Number(document.getElementById('input-manual-section-c').value);
-            const score = section1Part1Score + sectionCScore;
+            const section2Part1Score = Number(document.getElementById('input-manual-section2-part1').value);
+            const section2Part2Score = Number(document.getElementById('input-manual-section2-part2').value);
+            const score = section1Part1Score + section2Part1Score + section2Part2Score;
             const remarks = document.getElementById('input-manual-remarks').value.trim();
             if (!Number.isFinite(section1Part1Score) || section1Part1Score < 0 || section1Part1Score > manualMaximums.section1Part1
-                || !Number.isFinite(sectionCScore) || sectionCScore < 0 || sectionCScore > manualMaximums.sectionC
+                || !Number.isFinite(section2Part1Score) || section2Part1Score < 0 || section2Part1Score > manualMaximums.section2Part1
+                || !Number.isFinite(section2Part2Score) || section2Part2Score < 0 || section2Part2Score > manualMaximums.section2Part2
                 || score > manualPossible) {
-                window.showModal('Invalid Grade', `Section 1 Part 1 must be 0–${manualMaximums.section1Part1}, and Section C must be 0–${manualMaximums.sectionC}.`);
+                window.showModal('Invalid Grade', `Section 1 Part 1 must be 0–${manualMaximums.section1Part1}; Section 2 Part 1 must be 0–${manualMaximums.section2Part1}; Section 2 Part 2 must be 0–${manualMaximums.section2Part2}.`);
                 return;
             }
             const recalculatedObjective = calculateObjectiveResult(sub.answers || {});
-            const manualScoreBreakdown = { section1Part1: section1Part1Score, sectionC: sectionCScore };
+            const manualScoreBreakdown = { section1Part1: section1Part1Score, section2Part1: section2Part1Score, section2Part2: section2Part2Score };
 
             try {
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', subId), {

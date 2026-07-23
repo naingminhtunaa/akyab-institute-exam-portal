@@ -169,9 +169,47 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         }
 
         function isShortAnswerCorrect(item, submittedAnswer) {
-            const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-            const normalizedSubmitted = normalizeAnswer(submittedAnswer);
-            return Boolean(normalizedSubmitted) && getShortCorrectAnswers(item).some(answer => normalizeAnswer(answer) === normalizedSubmitted);
+            const toWords = value => String(value || '')
+                .normalize('NFKC')
+                .toLocaleLowerCase()
+                .replace(/[^\p{L}\p{N}]+/gu, ' ')
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean);
+            const editDistanceAtMostOne = (left, right) => {
+                if (left === right) return true;
+                if (Math.abs(left.length - right.length) > 1) return false;
+                let leftIndex = 0;
+                let rightIndex = 0;
+                let changes = 0;
+                while (leftIndex < left.length && rightIndex < right.length) {
+                    if (left[leftIndex] === right[rightIndex]) {
+                        leftIndex += 1;
+                        rightIndex += 1;
+                        continue;
+                    }
+                    changes += 1;
+                    if (changes > 1) return false;
+                    if (left.length > right.length) leftIndex += 1;
+                    else if (right.length > left.length) rightIndex += 1;
+                    else {
+                        leftIndex += 1;
+                        rightIndex += 1;
+                    }
+                }
+                if (leftIndex < left.length || rightIndex < right.length) changes += 1;
+                return changes <= 1;
+            };
+            const submittedWords = toWords(submittedAnswer);
+            if (!submittedWords.length) return false;
+            return getShortCorrectAnswers(item).some(answer => {
+                const acceptedWords = toWords(answer);
+                if (submittedWords.length !== acceptedWords.length) return false;
+                return acceptedWords.every((word, index) => {
+                    const submittedWord = submittedWords[index];
+                    return word === submittedWord || (word.length >= 4 && submittedWord.length >= 4 && editDistanceAtMostOne(word, submittedWord));
+                });
+            });
         }
 
         function getExamPointTotals() {

@@ -1011,7 +1011,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 globalSubmissionsMap[submissionId] = { ...submissionRecord, _docId: submissionId };
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
-                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${totalObjectivePossible}. Short Answer and Essay grading pending: ${officialManualPossible} marks.`);
+                window.showModal("Examination Submitted Successfully", "Your answers have been securely recorded and submitted successfully.");
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
                 document.getElementById('exam-start-gate').classList.add('hidden');

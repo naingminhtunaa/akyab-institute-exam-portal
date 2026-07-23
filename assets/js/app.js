@@ -79,7 +79,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     passageTitle: "Audio Context Instructions",
                     passageText: "Listen attentively to the audio track. You may replay the track according to the specified limit.",
                     mediaUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-                    maxPlays: 2,
+                    maxPlays: 3,
                     parts: [
                         {
                             partTitle: "Part 1: Short Conversation MCQs",
@@ -254,6 +254,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             stopExamListener = onSnapshot(examRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.currentExamData = docSnap.data();
+                    (window.currentExamData.sections || []).forEach(section => {
+                        if (section.mediaUrl && section.maxPlays === 2) section.maxPlays = 3;
+                    });
                     if (currentUserRole === 'admin') {
                         window.renderExamBuilder();
                     }
@@ -1462,7 +1465,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 passageTitle: "",
                 passageText: "",
                 mediaUrl: "",
-                maxPlays: 2,
+                maxPlays: 3,
                 parts: []
             });
             window.renderExamBuilder();

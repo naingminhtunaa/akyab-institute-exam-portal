@@ -161,6 +161,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             return item?.type === 'short' && sIdx === 0 && pIdx === 0 && qIdx >= 0 && qIdx < 4;
         }
 
+        function getShortCorrectAnswers(item) {
+            const answers = Array.isArray(item?.correctAnswers) ? item.correctAnswers : [];
+            const populated = answers.map(value => String(value || '').trim()).filter(Boolean);
+            if (populated.length) return populated;
+            return String(item?.correctAnswer || '').trim() ? [String(item.correctAnswer).trim()] : [];
+        }
+
+        function isShortAnswerCorrect(item, submittedAnswer) {
+            const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+            const normalizedSubmitted = normalizeAnswer(submittedAnswer);
+            return Boolean(normalizedSubmitted) && getShortCorrectAnswers(item).some(answer => normalizeAnswer(answer) === normalizedSubmitted);
+        }
+
         function getExamPointTotals() {
             let objective = 0;
             let manual = 0;
@@ -189,8 +202,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                             if (answers[qName] === item.correctOption) score += points;
                         } else if (item.type === 'short' && !isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
                             possible += points;
-                            const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                            if (normalizeAnswer(answers[qName]) && normalizeAnswer(answers[qName]) === normalizeAnswer(item.correctAnswer)) score += points;
+                            if (isShortAnswerCorrect(item, answers[qName])) score += points;
                         } else if (item.type === 'tf') {
                             possible += points;
                             if ((!item.subItems || item.subItems.length === 0) && item.correctAnswer) {
@@ -217,8 +229,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 if (item.type === 'mcq' && answers[qName] === item.correctOption) {
                     score += points;
                 } else if (item.type === 'short' && !isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
-                    const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                    if (normalizeAnswer(answers[qName]) && normalizeAnswer(answers[qName]) === normalizeAnswer(item.correctAnswer)) score += points;
+                    if (isShortAnswerCorrect(item, answers[qName])) score += points;
                 } else if (item.type === 'tf') {
                     if ((!item.subItems || item.subItems.length === 0) && item.correctAnswer) {
                         if (answers[qName] === item.correctAnswer) score += points;
@@ -1033,11 +1044,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                         if (isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
                                             isCorrectHTML = `<span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Manual grading · ${item.points || 1} marks</span>`;
                                         } else {
-                                            const normalizedGiven = String(sub.answers[qName] || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                                            const normalizedCorrect = String(item.correctAnswer || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                                            isCorrectHTML = normalizedGiven && normalizedGiven === normalizedCorrect
+                                            const acceptedAnswers = getShortCorrectAnswers(item);
+                                            isCorrectHTML = isShortAnswerCorrect(item, sub.answers[qName])
                                                 ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Correct (+${item.points || 1})</span>`
-                                                : `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Correct: ${escapeHtml(item.correctAnswer || '')})</span>`;
+                                                : `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Accepted: ${acceptedAnswers.map(escapeHtml).join(' / ')})</span>`;
                                         }
                                     } else if (item.type === 'essay') {
                                         const wordCount = getCleanWordCount(sub.answers[qName] || '');
@@ -1443,7 +1453,29 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                         </div>
                                     `;
                                 } else if (item.type === 'short') {
-                                    return `<div class="bg-slate-50 p-4 rounded-xl border space-y-3"><div class="flex justify-between"><span class="text-[10px] font-extrabold uppercase bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded">Short Answer</span><label class="text-[11px] font-bold flex items-center gap-1"><input type="checkbox" ${item.required !== false ? 'checked' : ''} onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].required=this.checked"> Required</label><button type="button" onclick="removeQuestion(${sIdx}, ${pIdx}, ${qIdx})" class="text-rose-600 text-xs"><i class="fa-solid fa-trash"></i> Remove</button></div><input type="text" value="${item.questionText || ''}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].questionText=this.value" class="w-full px-3 py-1.5 border rounded-lg text-xs font-semibold" placeholder="Short-answer question"><div class="grid grid-cols-2 gap-2"><div><label class="block text-[10px] font-bold">Correct Answer</label><input type="text" value="${item.correctAnswer || ''}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].correctAnswer=this.value" class="w-full px-2.5 py-1 border rounded-lg text-xs"></div><div><label class="block text-[10px] font-bold">Points</label><input type="number" value="${item.points || 1}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].points=parseInt(this.value)||1" class="w-full px-2.5 py-1 border rounded-lg text-xs"></div></div></div>`;
+                                    const correctAnswers = getShortCorrectAnswers(item);
+                                    if (!correctAnswers.length) correctAnswers.push('');
+                                    const correctAnswersHtml = correctAnswers.map((answer, answerIdx) => `
+                                        <div class="flex items-center gap-2">
+                                            <input type="text" value="${escapeHtml(answer)}" onchange="updateShortCorrectAnswer(${sIdx}, ${pIdx}, ${qIdx}, ${answerIdx}, this.value)" class="w-full px-2.5 py-1 border rounded-lg text-xs" placeholder="Accepted correct answer ${answerIdx + 1}">
+                                            ${correctAnswers.length > 1 ? `<button type="button" onclick="removeShortCorrectAnswer(${sIdx}, ${pIdx}, ${qIdx}, ${answerIdx})" class="text-rose-500 hover:text-rose-700 p-1" title="Remove answer"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                                        </div>`).join('');
+                                    return `
+                                        <div class="bg-slate-50 p-4 rounded-xl border space-y-3">
+                                            <div class="flex justify-between">
+                                                <span class="text-[10px] font-extrabold uppercase bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded">Short Answer</span>
+                                                <label class="text-[11px] font-bold flex items-center gap-1"><input type="checkbox" ${item.required !== false ? 'checked' : ''} onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].required=this.checked"> Required</label>
+                                                <button type="button" onclick="removeQuestion(${sIdx}, ${pIdx}, ${qIdx})" class="text-rose-600 text-xs"><i class="fa-solid fa-trash"></i> Remove</button>
+                                            </div>
+                                            <input type="text" value="${escapeHtml(item.questionText || '')}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].questionText=this.value" class="w-full px-3 py-1.5 border rounded-lg text-xs font-semibold" placeholder="Short-answer question">
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div class="space-y-2">
+                                                    <div class="flex items-center justify-between"><label class="block text-[10px] font-bold">Accepted Correct Answers</label><button type="button" onclick="addShortCorrectAnswer(${sIdx}, ${pIdx}, ${qIdx})" class="text-[11px] text-cyan-700 font-bold">+ Add Correct Answer</button></div>
+                                                    ${correctAnswersHtml}
+                                                </div>
+                                                <div><label class="block text-[10px] font-bold">Points</label><input type="number" value="${item.points || 1}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].points=parseInt(this.value)||1" class="w-full px-2.5 py-1 border rounded-lg text-xs"></div>
+                                            </div>
+                                        </div>`;
                                 } else if (item.type === 'tf') {
                                     return `<div class="bg-slate-50 p-4 rounded-xl border space-y-3"><div class="flex justify-between"><span class="text-[10px] font-extrabold uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded">True / False</span><label class="text-[11px] font-bold flex items-center gap-1"><input type="checkbox" ${item.required !== false ? 'checked' : ''} onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].required=this.checked"> Required</label><button type="button" onclick="removeQuestion(${sIdx}, ${pIdx}, ${qIdx})" class="text-rose-600 text-xs"><i class="fa-solid fa-trash"></i> Remove</button></div><input type="text" value="${item.questionText || ''}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].questionText=this.value" class="w-full px-3 py-1.5 border rounded-lg text-xs font-semibold" placeholder="True/False statement"><div class="grid grid-cols-2 gap-2"><div><label class="block text-[10px] font-bold">Correct Answer</label><select onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].correctAnswer=this.value" class="w-full px-2.5 py-1 border rounded-lg text-xs"><option value="True" ${item.correctAnswer === 'True' ? 'selected' : ''}>True</option><option value="False" ${item.correctAnswer === 'False' ? 'selected' : ''}>False</option></select></div><div><label class="block text-[10px] font-bold">Points</label><input type="number" value="${item.points || 1}" onchange="window.currentExamData.sections[${sIdx}].parts[${pIdx}].items[${qIdx}].points=parseInt(this.value)||1" class="w-full px-2.5 py-1 border rounded-lg text-xs"></div></div></div>`;
                                 } else if (item.type === 'essay') {
@@ -1582,6 +1614,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     questionText: "New Short Answer Question?",
                     type: "short",
                     correctAnswer: "",
+                    correctAnswers: [""],
                     points: 1,
                     required: true
                 });
@@ -1619,6 +1652,31 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         window.removeMcqOption = function(sIdx, pIdx, qIdx, oIdx) {
             window.currentExamData.sections[sIdx].parts[pIdx].items[qIdx].options.splice(oIdx, 1);
+            window.renderExamBuilder();
+        };
+
+        window.updateShortCorrectAnswer = function(sIdx, pIdx, qIdx, answerIdx, value) {
+            const item = window.currentExamData.sections[sIdx].parts[pIdx].items[qIdx];
+            if (!Array.isArray(item.correctAnswers)) item.correctAnswers = getShortCorrectAnswers(item);
+            if (!item.correctAnswers.length) item.correctAnswers = [''];
+            item.correctAnswers[answerIdx] = value;
+            item.correctAnswer = item.correctAnswers[0] || '';
+        };
+
+        window.addShortCorrectAnswer = function(sIdx, pIdx, qIdx) {
+            const item = window.currentExamData.sections[sIdx].parts[pIdx].items[qIdx];
+            if (!Array.isArray(item.correctAnswers)) item.correctAnswers = getShortCorrectAnswers(item);
+            if (!item.correctAnswers.length) item.correctAnswers = [''];
+            item.correctAnswers.push('');
+            window.renderExamBuilder();
+        };
+
+        window.removeShortCorrectAnswer = function(sIdx, pIdx, qIdx, answerIdx) {
+            const item = window.currentExamData.sections[sIdx].parts[pIdx].items[qIdx];
+            if (!Array.isArray(item.correctAnswers)) item.correctAnswers = getShortCorrectAnswers(item);
+            item.correctAnswers.splice(answerIdx, 1);
+            if (!item.correctAnswers.length) item.correctAnswers = [''];
+            item.correctAnswer = item.correctAnswers[0] || '';
             window.renderExamBuilder();
         };
 

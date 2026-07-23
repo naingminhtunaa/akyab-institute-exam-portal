@@ -338,11 +338,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             }
         };
 
-        window.quickFillStudent = function(id, name) {
-            document.getElementById('input-student-id').value = id;
-            document.getElementById('input-student-name').value = name;
-        };
-
         async function restorePortalSession() {
             if (sessionRestored) return;
             sessionRestored = true;
@@ -376,7 +371,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 try {
                     const loginDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_login_auth', savedSession.studentId));
                     if (!loginDoc.exists()) throw new Error('Student is no longer registered.');
-                    const registeredName = String(loginDoc.data().studentName || '').trim();
+                    let registeredName = String(loginDoc.data().studentName || '').trim();
+                    if (!registeredName) {
+                        const rosterDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', savedSession.studentId));
+                        registeredName = String(rosterDoc.data()?.studentName || '').trim();
+                    }
+                    if (!registeredName) throw new Error('Student name is not registered.');
                     currentUserRole = 'student';
                     currentStudentProfile = { studentId: savedSession.studentId, studentName: registeredName };
                     document.getElementById('user-display-name').textContent = `${registeredName} (${savedSession.studentId})`;
@@ -397,11 +397,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         window.handleStudentLogin = async function(e) {
             e.preventDefault();
             const sid = document.getElementById('input-student-id').value.trim().toUpperCase();
-            const sname = document.getElementById('input-student-name').value.trim();
             const password = document.getElementById('input-student-password').value.trim();
             const loginBtn = document.getElementById('btn-student-login-submit');
 
-            if (!sid || !sname || !/^\d{8}$/.test(password)) return;
+            if (!sid || !/^\d{8}$/.test(password)) return;
 
             loginBtn.disabled = true;
             loginBtn.classList.add('opacity-60', 'cursor-wait');
@@ -417,17 +416,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 }
 
                 const loginData = loginDoc.data();
-                const registeredName = String(loginData.studentName || '').trim();
-                const normalizeName = value => value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-
-                if (!registeredName || normalizeName(sname) !== normalizeName(registeredName)) {
-                    window.showModal("Login Denied", "The candidate name does not match the name registered for this Student ID.");
+                const suppliedHash = await hashStudentPassword(password, loginData.passwordSalt || '');
+                if (!loginData.passwordHash || suppliedHash !== loginData.passwordHash) {
+                    window.showModal("Login Denied", "Invalid Student ID or password.");
                     return;
                 }
 
-                const suppliedHash = await hashStudentPassword(password, loginData.passwordSalt || '');
-                if (!loginData.passwordHash || suppliedHash !== loginData.passwordHash) {
-                    window.showModal("Login Denied", "Invalid Student ID, candidate name, or password.");
+                let registeredName = String(loginData.studentName || '').trim();
+                if (!registeredName) {
+                    const rosterDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_roster', sid));
+                    registeredName = String(rosterDoc.data()?.studentName || '').trim();
+                }
+                if (!registeredName) {
+                    window.showModal("Login Denied", "No candidate name is registered for this Student ID. Please contact the administrator.");
                     return;
                 }
 

@@ -1012,7 +1012,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             }
         };
 
-        function renderStructuredSubmissionAnswers(sub) {
+        function renderStructuredSubmissionAnswers(sub, showGrading = true) {
             if (!window.currentExamData || !window.currentExamData.sections) {
                 let fallbackHtml = '';
                 for (let [k, v] of Object.entries(sub.answers || {})) {
@@ -1033,14 +1033,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                 if (item.type === 'mcq' || item.type === 'short' || item.type === 'essay') {
                                     const ans = sub.answers[qName] ? escapeHtml(sub.answers[qName]) : '<span class="text-slate-400 italic">No Answer</span>';
                                     let isCorrectHTML = '';
-                                    if (item.type === 'mcq') {
+                                    if (showGrading && item.type === 'mcq') {
                                         const correct = item.correctOption;
                                         if (sub.answers[qName] === correct) {
                                             isCorrectHTML = `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Correct (+${item.points || 1})</span>`;
                                         } else {
                                             isCorrectHTML = `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Correct: ${correct})</span>`;
                                         }
-                                    } else if (item.type === 'short') {
+                                    } else if (showGrading && item.type === 'short') {
                                         if (isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
                                             isCorrectHTML = `<span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Manual grading · ${item.points || 1} marks</span>`;
                                         } else {
@@ -1049,7 +1049,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                                 ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Correct (+${item.points || 1})</span>`
                                                 : `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Accepted: ${acceptedAnswers.map(escapeHtml).join(' / ')})</span>`;
                                         }
-                                    } else if (item.type === 'essay') {
+                                    } else if (showGrading && item.type === 'essay') {
                                         const wordCount = getCleanWordCount(sub.answers[qName] || '');
                                         isCorrectHTML = `<span class="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">${wordCount} words</span>`;
                                     }
@@ -1072,7 +1072,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                         const tfCorrect = rawTfAnswer === item.correctAnswer;
                                         itemsHtml += `
                                             <div class="p-3 bg-white border rounded-xl space-y-2 shadow-sm">
-                                                <div class="flex justify-between items-start gap-2"><p class="text-xs font-bold text-slate-900">${item.questionText}</p><span class="${tfCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'} text-[10px] font-extrabold px-2 py-0.5 rounded">${tfCorrect ? 'Correct' : `Incorrect (Correct: ${item.correctAnswer})`}</span></div>
+                                                <div class="flex justify-between items-start gap-2"><p class="text-xs font-bold text-slate-900">${item.questionText}</p>${showGrading ? `<span class="${tfCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'} text-[10px] font-extrabold px-2 py-0.5 rounded">${tfCorrect ? 'Correct' : `Incorrect (Correct: ${item.correctAnswer})`}</span>` : ''}</div>
                                                 <p class="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg">Answer: <strong>${tfAnswer}</strong></p>
                                             </div>`;
                                         return;
@@ -1085,7 +1085,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                             const subAns = escapeHtml(subAnsRaw);
                                             const correctSub = item.correctSubAnswers ? item.correctSubAnswers[subIdx] : '';
                                             const isSubCorrect = subAnsRaw === correctSub;
-                                            const subBadge = isSubCorrect ? `<span class="text-emerald-700 font-extrabold text-[10px]">✓ Correct</span>` : `<span class="text-rose-700 font-extrabold text-[10px]">✗ Correct: ${correctSub}</span>`;
+                                            const subBadge = showGrading ? (isSubCorrect ? `<span class="text-emerald-700 font-extrabold text-[10px]">✓ Correct</span>` : `<span class="text-rose-700 font-extrabold text-[10px]">✗ Correct: ${correctSub}</span>`) : '';
 
                                             subAnswersHtml += `
                                                 <div class="p-2.5 bg-slate-50 rounded-lg border text-xs flex items-center justify-between">
@@ -1192,19 +1192,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                             <i class="fa-solid fa-print"></i> 🖨 Print Submission PDF
                         </button>
                     </div>
-                    <div class="bg-slate-50 p-4 rounded-xl border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div class="bg-slate-50 p-4 rounded-xl border">
                         <div>
                             <p class="text-xs font-bold text-slate-800">Candidate ID: ${sub.studentId}</p>
                             <p class="text-xs font-bold text-slate-800">Candidate Name: ${sub.studentName}</p>
                             <p class="text-xs text-slate-500">Submitted At: ${new Date(sub.submittedAt).toLocaleString()}</p>
                         </div>
-                        <div class="text-right">
-                            <span class="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">Total Score: ${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}</span>
-                        </div>
                     </div>
                     <div class="space-y-4">
                         <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700">Structured Answer Sheet (Section & Part Breakdown)</h4>
-                        ${renderStructuredSubmissionAnswers(sub)}
+                        ${renderStructuredSubmissionAnswers(sub, false)}
                     </div>
                 </div>
             `;

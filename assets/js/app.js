@@ -159,28 +159,56 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         function getExamPointTotals() {
             let objective = 0;
-            let essay = 0;
+            let manual = 0;
             for (const section of window.currentExamData?.sections || []) {
                 for (const part of section.parts || []) {
                     for (const item of part.items || []) {
                         const points = Number(item.points) || 0;
-                        if (item.type === 'essay') essay += points;
+                        if (item.type === 'short' || item.type === 'essay') manual += points;
                         else objective += points;
                     }
                 }
             }
-            return { objective, essay, total: objective + essay };
+            return { objective, manual, total: objective + manual };
+        }
+
+        function calculateObjectiveResult(answers = {}) {
+            let score = 0;
+            let possible = 0;
+            for (const [sIdx, section] of (window.currentExamData?.sections || []).entries()) {
+                for (const [pIdx, part] of (section.parts || []).entries()) {
+                    for (const [qIdx, item] of (part.items || []).entries()) {
+                        const qName = `q_${sIdx}_${pIdx}_${qIdx}`;
+                        const points = Number(item.points) || 0;
+                        if (item.type === 'mcq') {
+                            possible += points;
+                            if (answers[qName] === item.correctOption) score += points;
+                        } else if (item.type === 'tf') {
+                            possible += points;
+                            if ((!item.subItems || item.subItems.length === 0) && item.correctAnswer) {
+                                if (answers[qName] === item.correctAnswer) score += points;
+                            } else if (item.subItems?.length && item.correctSubAnswers) {
+                                const pointsPerStatement = points / item.subItems.length;
+                                item.subItems.forEach((_, subIdx) => {
+                                    if (answers[`${qName}_sub_${subIdx}`] === item.correctSubAnswers[subIdx]) score += pointsPerStatement;
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            return { score, possible };
         }
 
         function getSubmissionTotalScore(sub) {
-            return (Number(sub?.autoScore) || 0) + (Number(sub?.essayScore) || 0);
+            return (Number(sub?.autoScore) || 0) + (Number(sub?.manualScore ?? sub?.essayScore) || 0);
         }
 
         function refreshExamPoints() {
             const badge = document.getElementById('builder-total-points');
             if (!badge) return;
             const totals = getExamPointTotals();
-            badge.textContent = `Total: ${totals.total} / 100 (Objective ${totals.objective} + Essay ${totals.essay})`;
+            badge.textContent = `Total: ${totals.total} / 100 (Objective ${totals.objective} + Short Answer & Essay ${totals.manual})`;
             badge.className = totals.total === 100
                 ? 'px-3 py-2 bg-emerald-50 text-emerald-700 text-xs font-extrabold rounded-xl border border-emerald-200'
                 : 'px-3 py-2 bg-rose-50 text-rose-700 text-xs font-extrabold rounded-xl border border-rose-200';
@@ -286,6 +314,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 globalSubmissionsMap = {};
                 snapshot.forEach(item => {
                     const data = item.data();
+                    const answers = data.answers || data.responses || data.studentAnswers || {};
+                    const recalculatedObjective = Object.keys(answers).length ? calculateObjectiveResult(answers) : null;
                     globalSubmissionsMap[item.id] = {
                         ...data,
                         _docId: item.id,
@@ -293,11 +323,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         studentId: data.studentId || data.studentID || data.candidateId || data.candidateID || item.id.split('_')[0],
                         studentName: data.studentName || data.candidateName || data.name || data.student_name || 'Unknown Candidate',
                         submittedAt: data.submittedAt || data.submissionTime || data.timestamp || data.createdAt || null,
-                        answers: data.answers || data.responses || data.studentAnswers || {},
-                        autoScore: data.autoScore ?? data.objectiveScore ?? data.score ?? 0,
-                        totalObjectivePossible: data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0,
+                        answers,
+                        autoScore: recalculatedObjective?.score ?? data.autoScore ?? data.objectiveScore ?? data.score ?? 0,
+                        totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0,
                         totalExamPossible: data.totalExamPossible ?? 100,
-                        totalEssayPossible: data.totalEssayPossible ?? Math.max(0, 100 - (data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0))
+                        totalManualPossible: data.totalManualPossible ?? data.totalEssayPossible ?? getExamPointTotals().manual,
+                        manualScore: data.manualScore ?? data.essayScore ?? 0,
+                        manualGraded: data.manualGraded ?? data.essayGraded ?? false
                     };
                 });
                 renderSubmissionsTable();
@@ -851,48 +883,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 answersMap[k] = v;
             }
 
-            let autoScore = 0;
-            let totalObjectivePossible = 0;
-
-            window.currentExamData.sections.forEach((sec, sIdx) => {
-                if (sec.parts) {
-                    sec.parts.forEach((part, pIdx) => {
-                        if (part.items) {
-                            part.items.forEach((item, qIdx) => {
-                                const qName = `q_${sIdx}_${pIdx}_${qIdx}`;
-                                const pts = item.points || 1;
-
-                                if (item.type === 'mcq') {
-                                    totalObjectivePossible += pts;
-                                    if (answersMap[qName] === item.correctOption) {
-                                        autoScore += pts;
-                                    }
-                                } else if (item.type === 'short') {
-                                    totalObjectivePossible += pts;
-                                    const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                                    if (normalizeAnswer(answersMap[qName]) && normalizeAnswer(answersMap[qName]) === normalizeAnswer(item.correctAnswer)) {
-                                        autoScore += pts;
-                                    }
-                                } else if (item.type === 'tf') {
-                                    if ((!item.subItems || item.subItems.length === 0) && item.correctAnswer) {
-                                        totalObjectivePossible += pts;
-                                        if (answersMap[qName] === item.correctAnswer) autoScore += pts;
-                                    } else if (item.subItems && item.correctSubAnswers) {
-                                        totalObjectivePossible += pts;
-                                        const pointsPerStatement = pts / item.subItems.length;
-                                        item.subItems.forEach((_, subIdx) => {
-                                            const subName = `${qName}_sub_${subIdx}`;
-                                            if (answersMap[subName] === item.correctSubAnswers[subIdx]) {
-                                                autoScore += pointsPerStatement;
-                                            }
-                                        });
-                                    }
-                                }
-                            });
-                        }
-                    });
-                }
-            });
+            const objectiveResult = calculateObjectiveResult(answersMap);
+            const autoScore = objectiveResult.score;
+            const totalObjectivePossible = objectiveResult.possible;
 
             const submissionId = `${currentStudentProfile.studentId}_${Date.now()}`;
             const examTotals = getExamPointTotals();
@@ -905,10 +898,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 answers: answersMap,
                 autoScore: autoScore,
                 totalObjectivePossible: totalObjectivePossible,
-                totalEssayPossible: examTotals.essay,
+                totalManualPossible: examTotals.manual,
                 totalExamPossible: examTotals.total,
-                essayGraded: false,
-                essayScore: 0,
+                manualGraded: false,
+                manualScore: 0,
                 adminRemarks: ""
             };
 
@@ -925,7 +918,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 globalSubmissionsMap[submissionId] = { ...submissionRecord, _docId: submissionId };
                 examInProgress = false;
                 localStorage.removeItem('akyabExamState');
-                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Total Score: ${autoScore} / 100 (Essay grading pending: ${examTotals.essay} marks).`);
+                window.showModal("Examination Submitted Successfully", `Your answers have been securely recorded. Objective Score: ${autoScore} / ${examTotals.objective}. Short Answer and Essay grading pending: ${examTotals.manual} marks.`);
                 
                 document.getElementById('exam-paper-container').classList.add('hidden');
                 document.getElementById('exam-start-gate').classList.add('hidden');
@@ -966,11 +959,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                             isCorrectHTML = `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Correct: ${correct})</span>`;
                                         }
                                     } else if (item.type === 'short') {
-                                        const normalizedGiven = String(sub.answers[qName] || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                                        const normalizedCorrect = String(item.correctAnswer || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-                                        isCorrectHTML = normalizedGiven === normalizedCorrect
-                                            ? `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Correct (+${item.points || 1})</span>`
-                                            : `<span class="bg-rose-100 text-rose-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Incorrect (Correct: ${item.correctAnswer || ''})</span>`;
+                                        isCorrectHTML = `<span class="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded">Manual grading · ${item.points || 1} marks</span>`;
                                     } else if (item.type === 'essay') {
                                         const wordCount = getCleanWordCount(sub.answers[qName] || '');
                                         isCorrectHTML = `<span class="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">${wordCount} words</span>`;
@@ -1075,14 +1064,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         const submissionDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', submissionId));
                         if (submissionDoc.exists()) {
                             const data = submissionDoc.data();
+                            const answers = data.answers || {};
+                            const recalculatedObjective = Object.keys(answers).length ? calculateObjectiveResult(answers) : null;
                             sub = {
                                 ...data,
                                 _docId: submissionDoc.id,
                                 submissionId: data.submissionId || submissionDoc.id,
-                                answers: data.answers || {},
-                                autoScore: data.autoScore ?? 0,
-                                essayScore: data.essayScore ?? 0,
-                                totalObjectivePossible: data.totalObjectivePossible ?? 0,
+                                answers,
+                                autoScore: recalculatedObjective?.score ?? data.autoScore ?? 0,
+                                manualScore: data.manualScore ?? data.essayScore ?? 0,
+                                manualGraded: data.manualGraded ?? data.essayGraded ?? false,
+                                totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0,
+                                totalManualPossible: data.totalManualPossible ?? data.totalEssayPossible ?? getExamPointTotals().manual,
                                 totalExamPossible: data.totalExamPossible ?? 100
                             };
                             globalSubmissionsMap[submissionDoc.id] = sub;
@@ -1553,7 +1546,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             window.updateExamMeta();
             const totals = getExamPointTotals();
             if (totals.total !== 100) {
-                window.showModal("Invalid Total Points", `Exam points must equal exactly 100. Current total: ${totals.total} (Objective ${totals.objective} + Essay ${totals.essay}).`);
+                window.showModal("Invalid Total Points", `Exam points must equal exactly 100. Current total: ${totals.total} (Objective ${totals.objective} + Short Answer & Essay ${totals.manual}).`);
                 return;
             }
             try {
@@ -1621,10 +1614,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     <td class="p-3 font-bold font-mono text-slate-900">${sub.studentId}</td>
                     <td class="p-3 font-semibold text-slate-800">${sub.studentName}</td>
                     <td class="p-3 text-slate-500">${sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Date unavailable'}</td>
-                    <td class="p-3 font-extrabold text-emerald-600">${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}${sub.essayGraded ? '' : '<span class="block text-[10px] text-amber-600">Essay Pending</span>'}</td>
+                    <td class="p-3 font-extrabold text-emerald-600">
+                        ${getSubmissionTotalScore(sub)} / ${sub.totalExamPossible || 100}
+                        <span class="block text-[10px] text-slate-500">Objective: ${sub.autoScore || 0} / ${sub.totalObjectivePossible || getExamPointTotals().objective}</span>
+                        ${sub.manualGraded
+                            ? `<span class="block text-[10px] text-indigo-600">Short Answer & Essay: ${sub.manualScore ?? sub.essayScore ?? 0} / ${sub.totalManualPossible || getExamPointTotals().manual}</span>`
+                            : `<span class="block text-[10px] text-amber-600">Short Answer and Essay Pending (${sub.totalManualPossible || getExamPointTotals().manual} marks)</span>`}
+                    </td>
                     <td class="p-3 text-right space-x-2">
                         <button onclick="viewCandidateSubmissionDetails('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs">Inspect</button>
-                        <button onclick="gradeEssayModal('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold rounded-lg text-xs">Grade Essay</button>
+                        <button onclick="gradeManualAnswersModal('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold rounded-lg text-xs">Grade Short Answer and Essay</button>
                         <button onclick="deleteCandidateSubmission('${sub._docId || sub.submissionId}')" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-xs"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
                     </td>
                 </tr>
@@ -1683,50 +1682,92 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             window.showModal(`Submission Details: ${sub.studentName}`, html);
         };
 
-        window.gradeEssayModal = function(subId) {
+        window.gradeManualAnswersModal = function(subId) {
             const sub = globalSubmissionsMap[subId];
             if (!sub) return;
+
+            const manualPossible = Number(sub.totalManualPossible) || getExamPointTotals().manual;
+            let answerCards = '';
+            (window.currentExamData?.sections || []).forEach((section, sIdx) => {
+                (section.parts || []).forEach((part, pIdx) => {
+                    (part.items || []).forEach((item, qIdx) => {
+                        if (item.type !== 'short' && item.type !== 'essay') return;
+                        const answer = String(sub.answers?.[`q_${sIdx}_${pIdx}_${qIdx}`] || '').trim();
+                        const wordCount = item.type === 'essay' ? ` · ${getCleanWordCount(answer)} words` : '';
+                        answerCards += `
+                            <div class="p-3 bg-white border rounded-xl space-y-2">
+                                <div class="flex justify-between gap-3">
+                                    <p class="text-xs font-bold text-slate-900">${escapeHtml(item.questionText || 'Question')}</p>
+                                    <span class="shrink-0 text-[10px] font-extrabold ${item.type === 'short' ? 'bg-cyan-100 text-cyan-800' : 'bg-indigo-100 text-indigo-800'} px-2 py-1 rounded">${item.type === 'short' ? 'Short Answer' : 'Essay'} · ${Number(item.points) || 0} marks${wordCount}</span>
+                                </div>
+                                <div class="text-xs text-slate-700 whitespace-pre-wrap bg-slate-50 border rounded-lg p-3">${answer ? escapeHtml(answer) : '<span class="italic text-slate-400">No answer</span>'}</div>
+                            </div>`;
+                    });
+                });
+            });
 
             let html = `
                 <div class="space-y-4">
                     <div class="bg-slate-50 p-4 rounded-xl border">
                         <p class="text-xs font-bold">Candidate: ${sub.studentName} (${sub.studentId})</p>
+                        <p class="text-xs text-slate-600 mt-1">Objective Score: ${sub.autoScore || 0} / ${sub.totalObjectivePossible || getExamPointTotals().objective}</p>
                     </div>
-                    <form onsubmit="submitEssayGrade(event, '${subId}')" class="space-y-4">
+                    <div class="space-y-3 max-h-80 overflow-y-auto">${answerCards || '<p class="text-xs text-slate-400">No short-answer or essay questions found.</p>'}</div>
+                    <form onsubmit="submitManualGrade(event, '${subId}')" class="space-y-4 border-t pt-4">
                         <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Essay Score / Points</label>
-                            <input type="number" id="input-essay-score" value="${sub.essayScore || 0}" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Short Answer and Essay Score / ${manualPossible}</label>
+                            <input type="number" id="input-manual-score" value="${sub.manualScore ?? sub.essayScore ?? 0}" min="0" max="${manualPossible}" step="0.5" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">Admin Examiner Remarks</label>
-                            <textarea id="input-essay-remarks" rows="3" class="w-full px-3 py-2 border rounded-xl text-xs">${sub.adminRemarks || ''}</textarea>
+                            <textarea id="input-manual-remarks" rows="3" class="w-full px-3 py-2 border rounded-xl text-xs">${sub.adminRemarks || ''}</textarea>
                         </div>
-                        <button type="submit" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow-md">Save Essay Grade</button>
+                        <button type="submit" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl text-xs shadow-md">Save Short Answer and Essay Grade</button>
                     </form>
                 </div>
             `;
-            window.showModal(`Grade Essay: ${sub.studentName}`, html);
+            window.showModal(`Grade Short Answer and Essay: ${sub.studentName}`, html);
         };
 
-        window.submitEssayGrade = async function(e, subId) {
+        window.submitManualGrade = async function(e, subId) {
             e.preventDefault();
-            const score = parseInt(document.getElementById('input-essay-score').value) || 0;
-            const remarks = document.getElementById('input-essay-remarks').value.trim();
+            const sub = globalSubmissionsMap[subId];
+            if (!sub) return;
+            const manualPossible = Number(sub.totalManualPossible) || getExamPointTotals().manual;
+            const score = Number(document.getElementById('input-manual-score').value);
+            const remarks = document.getElementById('input-manual-remarks').value.trim();
+            if (!Number.isFinite(score) || score < 0 || score > manualPossible) {
+                window.showModal('Invalid Grade', `Manual grade must be between 0 and ${manualPossible}.`);
+                return;
+            }
+            const recalculatedObjective = calculateObjectiveResult(sub.answers || {});
 
             try {
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', subId), {
+                    manualGraded: true,
+                    manualScore: score,
+                    totalManualPossible: manualPossible,
+                    autoScore: recalculatedObjective.score,
+                    totalObjectivePossible: recalculatedObjective.possible,
                     essayGraded: true,
                     essayScore: score,
                     adminRemarks: remarks
                 });
-                globalSubmissionsMap[subId].essayGraded = true;
-                globalSubmissionsMap[subId].essayScore = score;
-                globalSubmissionsMap[subId].adminRemarks = remarks;
+                Object.assign(globalSubmissionsMap[subId], {
+                    manualGraded: true,
+                    manualScore: score,
+                    totalManualPossible: manualPossible,
+                    autoScore: recalculatedObjective.score,
+                    totalObjectivePossible: recalculatedObjective.possible,
+                    essayGraded: true,
+                    essayScore: score,
+                    adminRemarks: remarks
+                });
                 renderSubmissionsTable();
                 window.closeModal();
-                window.showModal("Success", "Essay grade successfully recorded.");
+                window.showModal("Success", "Short Answer and Essay grade successfully recorded.");
             } catch (err) {
-                console.error("Grade save error:", err);
+                console.error("Manual grade save error:", err);
             }
         };
 

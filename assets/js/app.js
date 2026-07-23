@@ -1453,8 +1453,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                         </div>
                                     `;
                                 } else if (item.type === 'short') {
-                                    const correctAnswers = getShortCorrectAnswers(item);
-                                    if (!correctAnswers.length) correctAnswers.push('');
+                                    const correctAnswers = Array.isArray(item.correctAnswers) && item.correctAnswers.length
+                                        ? item.correctAnswers
+                                        : [String(item.correctAnswer || '')];
                                     const correctAnswersHtml = correctAnswers.map((answer, answerIdx) => `
                                         <div class="flex items-center gap-2">
                                             <input type="text" value="${escapeHtml(answer)}" onchange="updateShortCorrectAnswer(${sIdx}, ${pIdx}, ${qIdx}, ${answerIdx}, this.value)" class="w-full px-2.5 py-1 border rounded-lg text-xs" placeholder="Accepted correct answer ${answerIdx + 1}">

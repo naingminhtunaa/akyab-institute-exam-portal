@@ -208,6 +208,56 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             return { score, possible };
         }
 
+        function calculatePartObjectiveScore(answers = {}, sIdx, pIdx) {
+            let score = 0;
+            const part = window.currentExamData?.sections?.[sIdx]?.parts?.[pIdx];
+            for (const [qIdx, item] of (part?.items || []).entries()) {
+                const qName = `q_${sIdx}_${pIdx}_${qIdx}`;
+                const points = Number(item.points) || 0;
+                if (item.type === 'mcq' && answers[qName] === item.correctOption) {
+                    score += points;
+                } else if (item.type === 'short' && !isManuallyGradedShortAnswer(sIdx, pIdx, qIdx, item)) {
+                    const normalizeAnswer = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+                    if (normalizeAnswer(answers[qName]) && normalizeAnswer(answers[qName]) === normalizeAnswer(item.correctAnswer)) score += points;
+                } else if (item.type === 'tf') {
+                    if ((!item.subItems || item.subItems.length === 0) && item.correctAnswer) {
+                        if (answers[qName] === item.correctAnswer) score += points;
+                    } else if (item.subItems?.length && item.correctSubAnswers) {
+                        const pointsPerStatement = points / item.subItems.length;
+                        item.subItems.forEach((_, subIdx) => {
+                            if (answers[`${qName}_sub_${subIdx}`] === item.correctSubAnswers[subIdx]) score += pointsPerStatement;
+                        });
+                    }
+                }
+            }
+            return score;
+        }
+
+        function getManualGroupMaximums() {
+            return { section1Part1: 8, sectionC: 40 };
+        }
+
+        function getSubmissionScoreBreakdown(sub) {
+            const answers = sub?.answers || {};
+            let manual = sub?.manualScoreBreakdown || {};
+            if (!Object.keys(manual).length && sub?.manualGraded) {
+                const maximums = getManualGroupMaximums();
+                const legacyTotal = Number(sub.manualScore ?? sub.essayScore) || 0;
+                const sectionC = Math.min(legacyTotal, maximums.sectionC);
+                manual = { sectionC, section1Part1: Math.min(Math.max(legacyTotal - sectionC, 0), maximums.section1Part1) };
+            }
+            const sectionCObjective = (window.currentExamData?.sections?.[2]?.parts || [])
+                .reduce((sum, _, pIdx) => sum + calculatePartObjectiveScore(answers, 2, pIdx), 0);
+            return {
+                section1Part1: calculatePartObjectiveScore(answers, 0, 0) + (Number(manual.section1Part1) || 0),
+                section1Part2: calculatePartObjectiveScore(answers, 0, 1),
+                section1Part3: calculatePartObjectiveScore(answers, 0, 2),
+                section2Part1: calculatePartObjectiveScore(answers, 1, 0),
+                section2Part2: calculatePartObjectiveScore(answers, 1, 1),
+                sectionC: sectionCObjective + (Number(manual.sectionC) || 0)
+            };
+        }
+
         function getSubmissionTotalScore(sub) {
             return (Number(sub?.autoScore) || 0) + (Number(sub?.manualScore ?? sub?.essayScore) || 0);
         }
@@ -346,7 +396,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                         totalExamPossible: data.totalExamPossible ?? 100,
                         totalManualPossible: Math.max(0, (data.totalExamPossible ?? 100) - (recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0)),
                         manualScore: data.manualScore ?? data.essayScore ?? 0,
-                        manualGraded: data.manualGraded ?? data.essayGraded ?? false
+                        manualGraded: data.manualGraded ?? data.essayGraded ?? false,
+                        manualScoreBreakdown: data.manualScoreBreakdown || {}
                     };
                 });
                 renderSubmissionsTable();
@@ -919,6 +970,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 totalExamPossible: examTotals.total,
                 manualGraded: false,
                 manualScore: 0,
+                manualScoreBreakdown: { section1Part1: 0, sectionC: 0 },
                 adminRemarks: ""
             };
 
@@ -1099,6 +1151,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                                 autoScore: recalculatedObjective?.score ?? data.autoScore ?? 0,
                                 manualScore: data.manualScore ?? data.essayScore ?? 0,
                                 manualGraded: data.manualGraded ?? data.essayGraded ?? false,
+                                manualScoreBreakdown: data.manualScoreBreakdown || {},
                                 totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0,
                                 totalManualPossible: Math.max(0, (data.totalExamPossible ?? 100) - (recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0)),
                                 totalExamPossible: data.totalExamPossible ?? 100
@@ -1712,6 +1765,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             if (!sub) return;
 
             const manualPossible = getSubmissionManualPossible(sub);
+            const manualMaximums = getManualGroupMaximums();
+            const savedBreakdown = sub.manualScoreBreakdown || {};
             let answerCards = '';
             (window.currentExamData?.sections || []).forEach((section, sIdx) => {
                 (section.parts || []).forEach((part, pIdx) => {
@@ -1739,10 +1794,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     </div>
                     <div class="space-y-3 max-h-80 overflow-y-auto">${answerCards || '<p class="text-xs text-slate-400">No short-answer or essay questions found.</p>'}</div>
                     <form onsubmit="submitManualGrade(event, '${subId}')" class="space-y-4 border-t pt-4">
-                        <div>
-                            <label class="block text-xs font-bold text-slate-700 mb-1">Short Answer and Essay Score / ${manualPossible}</label>
-                            <input type="number" id="input-manual-score" value="${sub.manualScore ?? sub.essayScore ?? 0}" min="0" max="${manualPossible}" step="0.5" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Section 1 · Part 1 Short Answers / ${manualMaximums.section1Part1}</label>
+                                <input type="number" id="input-manual-section1-part1" value="${Number(savedBreakdown.section1Part1) || 0}" min="0" max="${manualMaximums.section1Part1}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 mb-1">Section C Essay / ${manualMaximums.sectionC}</label>
+                                <input type="number" id="input-manual-section-c" value="${Number(savedBreakdown.sectionC) || 0}" min="0" max="${manualMaximums.sectionC}" step="0.5" oninput="updateManualGradeTotal()" required class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+                            </div>
                         </div>
+                        <p class="text-xs font-extrabold text-indigo-700">Short Answer and Essay Total: <span id="manual-grade-total">${(Number(savedBreakdown.section1Part1) || 0) + (Number(savedBreakdown.sectionC) || 0)}</span> / ${manualPossible}</p>
                         <div>
                             <label class="block text-xs font-bold text-slate-700 mb-1">Admin Examiner Remarks</label>
                             <textarea id="input-manual-remarks" rows="3" class="w-full px-3 py-2 border rounded-xl text-xs">${sub.adminRemarks || ''}</textarea>
@@ -1754,23 +1816,37 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             window.showModal(`Grade Short Answer and Essay: ${sub.studentName}`, html);
         };
 
+        window.updateManualGradeTotal = function() {
+            const shortScore = Number(document.getElementById('input-manual-section1-part1')?.value) || 0;
+            const essayScore = Number(document.getElementById('input-manual-section-c')?.value) || 0;
+            const total = document.getElementById('manual-grade-total');
+            if (total) total.textContent = shortScore + essayScore;
+        };
+
         window.submitManualGrade = async function(e, subId) {
             e.preventDefault();
             const sub = globalSubmissionsMap[subId];
             if (!sub) return;
             const manualPossible = getSubmissionManualPossible(sub);
-            const score = Number(document.getElementById('input-manual-score').value);
+            const manualMaximums = getManualGroupMaximums();
+            const section1Part1Score = Number(document.getElementById('input-manual-section1-part1').value);
+            const sectionCScore = Number(document.getElementById('input-manual-section-c').value);
+            const score = section1Part1Score + sectionCScore;
             const remarks = document.getElementById('input-manual-remarks').value.trim();
-            if (!Number.isFinite(score) || score < 0 || score > manualPossible) {
-                window.showModal('Invalid Grade', `Manual grade must be between 0 and ${manualPossible}.`);
+            if (!Number.isFinite(section1Part1Score) || section1Part1Score < 0 || section1Part1Score > manualMaximums.section1Part1
+                || !Number.isFinite(sectionCScore) || sectionCScore < 0 || sectionCScore > manualMaximums.sectionC
+                || score > manualPossible) {
+                window.showModal('Invalid Grade', `Section 1 Part 1 must be 0–${manualMaximums.section1Part1}, and Section C must be 0–${manualMaximums.sectionC}.`);
                 return;
             }
             const recalculatedObjective = calculateObjectiveResult(sub.answers || {});
+            const manualScoreBreakdown = { section1Part1: section1Part1Score, sectionC: sectionCScore };
 
             try {
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_submissions', subId), {
                     manualGraded: true,
                     manualScore: score,
+                    manualScoreBreakdown,
                     totalManualPossible: manualPossible,
                     autoScore: recalculatedObjective.score,
                     totalObjectivePossible: recalculatedObjective.possible,
@@ -1781,6 +1857,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 Object.assign(globalSubmissionsMap[subId], {
                     manualGraded: true,
                     manualScore: score,
+                    manualScoreBreakdown,
                     totalManualPossible: manualPossible,
                     autoScore: recalculatedObjective.score,
                     totalObjectivePossible: recalculatedObjective.possible,
@@ -1803,18 +1880,31 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 return;
             }
 
-            let csvContent = "data:text/csv;charset=utf-8,Student ID,Candidate Name,Submitted At,Total Score,Total Possible\n";
-            subs.forEach(s => {
-                csvContent += `"${s.studentId}","${s.studentName}","${s.submittedAt}",${getSubmissionTotalScore(s)},${s.totalExamPossible || 100}\n`;
+            const csvValue = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+            const rows = [[
+                'Student ID', 'Candidate Name', 'Submitted At',
+                'Section 1 - Part 1', 'Section 1 - Part 2', 'Section 1 - Part 3',
+                'Section 2 - Part 1', 'Section 2 - Part 2', 'Section C',
+                'Total Score', 'Total Possible'
+            ]];
+            subs.forEach(sub => {
+                const scores = getSubmissionScoreBreakdown(sub);
+                rows.push([
+                    sub.studentId, sub.studentName, sub.submittedAt,
+                    scores.section1Part1, scores.section1Part2, scores.section1Part3,
+                    scores.section2Part1, scores.section2Part2, scores.sectionC,
+                    getSubmissionTotalScore(sub), sub.totalExamPossible || 100
+                ]);
             });
-
-            const encodedUri = encodeURI(csvContent);
+            const csvContent = '\uFEFF' + rows.map(row => row.map(csvValue).join(',')).join('\r\n');
+            const url = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
             const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
+            link.setAttribute("href", url);
             link.setAttribute("download", "akyab_batch9_exam_submissions.csv");
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         };
 
         window.exportRosterCSV = function() {

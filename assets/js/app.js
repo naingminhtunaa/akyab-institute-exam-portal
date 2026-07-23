@@ -966,11 +966,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 answers: answersMap,
                 autoScore: autoScore,
                 totalObjectivePossible: totalObjectivePossible,
-                totalManualPossible: Math.max(0, examTotals.total - totalObjectivePossible),
+                // Keep create-time field names compatible with the currently published Firestore rules.
+                // The app maps these legacy names to the Short Answer + Essay manual-grading model.
+                totalEssayPossible: Math.max(0, examTotals.total - totalObjectivePossible),
                 totalExamPossible: examTotals.total,
-                manualGraded: false,
-                manualScore: 0,
-                manualScoreBreakdown: { section1Part1: 0, sectionC: 0 },
+                essayGraded: false,
+                essayScore: 0,
                 adminRemarks: ""
             };
 

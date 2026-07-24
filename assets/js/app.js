@@ -18,6 +18,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         let stopExamListener = null;
         let sessionRestored = false;
         let examInProgress = false;
+        let examAccessOpen = true;
+        let currentStudentHasSubmitted = false;
         window.activeAudioInstances = {};
 
         function studentLockdownActive() {
@@ -69,6 +71,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         window.currentExamData = {
             title: "Akyab Institute Batch-9 Official Entrance Examination",
+            examAccessOpen: true,
             timeLimitMinutes: 180,
             instructions: "Answer all sections completely. Audio/video media playback is limited to configured attempts.",
             sections: [
@@ -399,6 +402,57 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         });
         initAuth();
 
+        function updateExamAccessControls() {
+            const adminButton = document.getElementById('btn-toggle-exam-access');
+            if (adminButton) {
+                adminButton.innerHTML = examAccessOpen
+                    ? '<i class="fa-solid fa-stop mr-1"></i> Stop Exam'
+                    : '<i class="fa-solid fa-play mr-1"></i> Start Exam';
+                adminButton.className = examAccessOpen
+                    ? 'px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg border border-rose-700'
+                    : 'px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg border border-emerald-700';
+            }
+
+            const startGate = document.getElementById('exam-start-gate');
+            const startButton = document.getElementById('btn-start-exam');
+            if (!startGate || !startButton || currentUserRole !== 'student') return;
+            if (currentStudentHasSubmitted) {
+                startGate.classList.add('opacity-60');
+                startButton.disabled = true;
+                startButton.innerHTML = '<i class="fa-solid fa-lock"></i> <span>🔒 Examination Already Completed</span>';
+                startButton.className = 'px-8 py-3.5 bg-slate-600 text-slate-300 font-bold rounded-xl cursor-not-allowed text-sm shrink-0 flex items-center gap-2';
+            } else if (!examAccessOpen) {
+                startGate.classList.add('opacity-75');
+                startButton.disabled = false;
+                startButton.setAttribute('aria-disabled', 'true');
+                startButton.innerHTML = '<i class="fa-solid fa-lock"></i> <span>Examination Is Currently Closed</span>';
+                startButton.className = 'px-8 py-3.5 bg-slate-600 hover:bg-slate-700 text-slate-200 font-bold rounded-xl cursor-not-allowed text-sm shrink-0 flex items-center gap-2';
+            } else {
+                startGate.classList.remove('opacity-60', 'opacity-75');
+                startButton.disabled = false;
+                startButton.removeAttribute('aria-disabled');
+                startButton.innerHTML = '<i class="fa-solid fa-play"></i> <span>Start Examination Now & Begin Timer</span>';
+                startButton.className = 'px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-500/30 text-sm transition-all transform active:scale-95 shrink-0 flex items-center gap-2';
+            }
+        }
+
+        window.toggleExamAccess = async function() {
+            if (currentUserRole !== 'admin') return;
+            const nextState = !examAccessOpen;
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'exam_papers', 'current_exam'), {
+                    examAccessOpen: nextState,
+                    examAccessUpdatedAt: new Date().toISOString()
+                });
+                window.showModal(nextState ? 'Examination Started' : 'Examination Stopped', nextState
+                    ? 'Students can now start the examination.'
+                    : 'Students cannot start a new examination until you start it again.');
+            } catch (error) {
+                console.error('Exam access update error:', error);
+                window.showModal('Exam Status Error', `Could not update the exam status: ${escapeHtml(error.message || String(error))}`);
+            }
+        };
+
         function listenToFirestoreData() {
             if (!auth.currentUser) return;
 
@@ -407,12 +461,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             stopExamListener = onSnapshot(examRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.currentExamData = docSnap.data();
+                    examAccessOpen = window.currentExamData.examAccessOpen !== false;
                     (window.currentExamData.sections || []).forEach(section => {
                         if (section.mediaUrl && section.maxPlays === 2) section.maxPlays = 3;
                     });
                     if (currentUserRole === 'admin') {
                         window.renderExamBuilder();
                     }
+                    updateExamAccessControls();
                 }
             }, (err) => console.error("Exam paper snapshot error:", err));
 
@@ -520,6 +576,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 document.getElementById('logout-btn').classList.remove('hidden');
                 document.getElementById('view-auth').classList.add('hidden');
                 document.getElementById('view-admin').classList.remove('hidden');
+                updateExamAccessControls();
                 loadRosterData();
                 window.renderExamBuilder();
                 return;
@@ -639,6 +696,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
                 document.getElementById('view-auth').classList.add('hidden');
                 document.getElementById('view-admin').classList.remove('hidden');
+                updateExamAccessControls();
                 loadRosterData();
                 window.renderExamBuilder();
             } catch (err) {
@@ -651,6 +709,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             currentUserRole = null;
             currentStudentProfile = null;
             examInProgress = false;
+            currentStudentHasSubmitted = false;
             sessionStorage.removeItem('akyabPortalSession');
             if (examTimerInterval) clearInterval(examTimerInterval);
             window.stopAllAudioInstances();
@@ -675,7 +734,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         async function checkExistingStudentSubmission(sid) {
             const startGate = document.getElementById('exam-start-gate');
             const submittedBanner = document.getElementById('already-submitted-banner');
-            const startBtn = document.getElementById('btn-start-exam');
             document.getElementById('exam-paper-container').classList.add('hidden');
             startGate.classList.remove('hidden');
 
@@ -688,18 +746,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 console.warn("Student submission check error:", err);
             }
 
-            if (existing) {
-                startGate.classList.add('opacity-60');
-                startBtn.disabled = true;
-                startBtn.innerHTML = `<i class="fa-solid fa-lock"></i> <span>🔒 Examination Already Completed</span>`;
-                startBtn.className = "px-8 py-3.5 bg-slate-600 text-slate-300 font-bold rounded-xl cursor-not-allowed text-sm shrink-0 flex items-center gap-2";
-                submittedBanner.classList.remove('hidden');
-            } else {
-                startGate.classList.remove('opacity-60');
-                startBtn.disabled = false;
-                startBtn.innerHTML = `<i class="fa-solid fa-play"></i> <span>Start Examination Now & Begin Timer</span>`;
-                startBtn.className = "px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl shadow-lg shadow-emerald-500/30 text-sm transition-all transform active:scale-95 shrink-0 flex items-center gap-2";
-                submittedBanner.classList.add('hidden');
+            currentStudentHasSubmitted = Boolean(existing);
+            submittedBanner.classList.toggle('hidden', !existing);
+            updateExamAccessControls();
+            if (!existing) {
                 try {
                     const state = JSON.parse(localStorage.getItem('akyabExamState') || 'null');
                     if (state?.studentId === sid) window.startCandidateExam(true);
@@ -710,6 +760,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         }
 
         window.startCandidateExam = function(resume = false) {
+            if (!resume && !examAccessOpen) {
+                window.showModal('Examination Not Available', 'The administrator has not started the examination yet. Please wait and try again.');
+                return;
+            }
             examInProgress = true;
             let state;
             try {

@@ -1848,9 +1848,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
         function renderSubmissionsTable() {
             const tbody = document.getElementById('submissions-table-body');
             const subs = Object.values(globalSubmissionsMap).sort((left, right) => {
-                const leftTime = left.submittedAt ? new Date(left.submittedAt).getTime() : 0;
-                const rightTime = right.submittedAt ? new Date(right.submittedAt).getTime() : 0;
-                return rightTime - leftTime;
+                const nameComparison = String(left.studentName || '').localeCompare(
+                    String(right.studentName || ''),
+                    'en',
+                    { sensitivity: 'base', numeric: true }
+                );
+                if (nameComparison !== 0) return nameComparison;
+                return String(left.studentId || '').localeCompare(
+                    String(right.studentId || ''),
+                    'en',
+                    { sensitivity: 'base', numeric: true }
+                );
             });
 
             if (subs.length === 0) {

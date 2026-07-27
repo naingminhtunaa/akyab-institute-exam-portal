@@ -1847,7 +1847,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         function renderSubmissionsTable() {
             const tbody = document.getElementById('submissions-table-body');
-            const subs = Object.values(globalSubmissionsMap).sort((left, right) => {
+            const searchTerm = String(document.getElementById('submission-name-search')?.value || '')
+                .trim()
+                .toLocaleLowerCase();
+            const allSubmissions = Object.values(globalSubmissionsMap);
+            const subs = allSubmissions.filter(sub =>
+                String(sub.studentName || '').toLocaleLowerCase().includes(searchTerm)
+            ).sort((left, right) => {
                 const nameComparison = String(left.studentName || '').localeCompare(
                     String(right.studentName || ''),
                     'en',
@@ -1862,7 +1868,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
             });
 
             if (subs.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">No candidate submissions recorded yet.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">${searchTerm ? 'No candidate names match your search.' : 'No candidate submissions recorded yet.'}</td></tr>`;
                 return;
             }
 
@@ -1886,6 +1892,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 </tr>
             `).join('');
         }
+
+        window.filterSubmissionsByName = function() {
+            renderSubmissionsTable();
+        };
 
         window.deleteCandidateSubmission = async function(subId) {
             const sub = globalSubmissionsMap[subId];

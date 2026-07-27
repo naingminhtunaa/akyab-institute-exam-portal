@@ -299,9 +299,18 @@
                         <h3 class="text-sm font-bold text-slate-900">Submitted Candidate Results</h3>
                         <p class="text-xs text-slate-500">Review auto-graded objective marks, grade short answers and essays, and export PDF/CSV grade sheets.</p>
                     </div>
-                    <button onclick="exportCSV()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all">
-                        <i class="fa-solid fa-file-csv mr-1"></i> Export Submissions CSV
-                    </button>
+                    <div class="flex w-full md:w-auto flex-col sm:flex-row gap-2">
+                        <label class="relative block w-full sm:w-64">
+                            <span class="sr-only">Search by candidate name</span>
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input id="submission-name-search" type="search" oninput="filterSubmissionsByName()"
+                                placeholder="Search candidate name"
+                                class="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                        </label>
+                        <button onclick="exportCSV()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all whitespace-nowrap">
+                            <i class="fa-solid fa-file-csv mr-1"></i> Export Submissions CSV
+                        </button>
+                    </div>
                 </div>
 
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

@@ -489,30 +489,36 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         async function loadRecentSubmissions() {
             if (!auth.currentUser || currentUserRole !== 'admin') return;
+            const tbody = document.getElementById('submissions-table-body');
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading all submissions...</td></tr>`;
             try {
                 const subsRef = collection(db, 'artifacts', appId, 'public', 'data', 'exam_submissions');
-                const snapshot = await getDocs(query(subsRef, orderBy('submittedAt', 'desc'), limit(25)));
+                const snapshot = await getDocs(subsRef);
                 globalSubmissionsMap = {};
                 snapshot.forEach(item => {
-                    const data = item.data();
-                    const answers = data.answers || data.responses || data.studentAnswers || {};
-                    const recalculatedObjective = Object.keys(answers).length ? calculateObjectiveResult(answers) : null;
-                    globalSubmissionsMap[item.id] = {
-                        ...data,
-                        _docId: item.id,
-                        submissionId: data.submissionId || item.id,
-                        studentId: data.studentId || data.studentID || data.candidateId || data.candidateID || item.id.split('_')[0],
-                        studentName: data.studentName || data.candidateName || data.name || data.student_name || 'Unknown Candidate',
-                        submittedAt: data.submittedAt || data.submissionTime || data.timestamp || data.createdAt || null,
-                        answers,
-                        autoScore: recalculatedObjective?.score ?? data.autoScore ?? data.objectiveScore ?? data.score ?? 0,
-                        totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0,
-                        totalExamPossible: data.totalExamPossible ?? 100,
-                        totalManualPossible: Math.max(0, (data.totalExamPossible ?? 100) - (recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0)),
-                        manualScore: data.manualScore ?? data.essayScore ?? 0,
-                        manualGraded: data.manualGraded ?? data.essayGraded ?? false,
-                        manualScoreBreakdown: data.manualScoreBreakdown || {}
-                    };
+                    try {
+                        const data = item.data();
+                        const answers = data.answers || data.responses || data.studentAnswers || {};
+                        const recalculatedObjective = Object.keys(answers).length ? calculateObjectiveResult(answers) : null;
+                        globalSubmissionsMap[item.id] = {
+                            ...data,
+                            _docId: item.id,
+                            submissionId: data.submissionId || item.id,
+                            studentId: data.studentId || data.studentID || data.candidateId || data.candidateID || item.id.split('_')[0],
+                            studentName: data.studentName || data.candidateName || data.name || data.student_name || 'Unknown Candidate',
+                            submittedAt: data.submittedAt || data.submissionTime || data.timestamp || data.createdAt || null,
+                            answers,
+                            autoScore: recalculatedObjective?.score ?? data.autoScore ?? data.objectiveScore ?? data.score ?? 0,
+                            totalObjectivePossible: recalculatedObjective?.possible ?? data.totalObjectivePossible ?? data.totalPossible ?? data.totalScore ?? 0,
+                            totalExamPossible: data.totalExamPossible ?? 100,
+                            totalManualPossible: Math.max(0, (data.totalExamPossible ?? 100) - (recalculatedObjective?.possible ?? data.totalObjectivePossible ?? 0)),
+                            manualScore: data.manualScore ?? data.essayScore ?? 0,
+                            manualGraded: data.manualGraded ?? data.essayGraded ?? false,
+                            manualScoreBreakdown: data.manualScoreBreakdown || {}
+                        };
+                    } catch (recordError) {
+                        console.error(`Submission record ${item.id} could not be normalized:`, recordError);
+                    }
                 });
                 renderSubmissionsTable();
                 await Promise.allSettled(Object.values(globalSubmissionsMap).map(async sub => {
@@ -530,6 +536,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                 }));
             } catch (err) {
                 console.error("Submissions load error:", err);
+                if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-rose-600 font-bold">Could not load submissions: ${escapeHtml(err.code || err.message || String(err))}</td></tr>`;
+                window.showModal('Submission List Error', `Could not load submitted answer sheets: ${escapeHtml(err.code || err.message || String(err))}`);
             }
         }
 
@@ -1839,7 +1847,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 
         function renderSubmissionsTable() {
             const tbody = document.getElementById('submissions-table-body');
-            const subs = Object.values(globalSubmissionsMap);
+            const subs = Object.values(globalSubmissionsMap).sort((left, right) => {
+                const leftTime = left.submittedAt ? new Date(left.submittedAt).getTime() : 0;
+                const rightTime = right.submittedAt ? new Date(right.submittedAt).getTime() : 0;
+                return rightTime - leftTime;
+            });
 
             if (subs.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">No candidate submissions recorded yet.</td></tr>`;

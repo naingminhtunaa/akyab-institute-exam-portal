@@ -1866,6 +1866,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
                     { sensitivity: 'base', numeric: true }
                 );
             });
+            const countBadge = document.getElementById('submission-total-count');
+            if (countBadge) {
+                countBadge.textContent = searchTerm
+                    ? `Showing: ${subs.length} / Total: ${allSubmissions.length}`
+                    : `Total Submissions: ${allSubmissions.length}`;
+            }
 
             if (subs.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">${searchTerm ? 'No candidate names match your search.' : 'No candidate submissions recorded yet.'}</td></tr>`;
